@@ -8,7 +8,7 @@ void showNotImplemented(BuildContext context) {
 }
 
 class DashboardLayout extends StatelessWidget {
-  const DashboardLayout({required this.child});
+  const DashboardLayout({super.key, required this.child});
 
   final Widget child;
 
@@ -37,8 +37,30 @@ class DashboardLayout extends StatelessWidget {
   }
 }
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  late ScrollController _horizontalController;
+  late ScrollController _verticalController;
+
+  @override
+  void initState() {
+    super.initState();
+    _horizontalController = ScrollController();
+    _verticalController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _horizontalController.dispose();
+    _verticalController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -50,12 +72,14 @@ class DashboardScreen extends StatelessWidget {
               : constraints.maxWidth;
 
           return Scrollbar(
+            controller: _horizontalController,
             thumbVisibility: true,
             child: SingleChildScrollView(
+              controller: _horizontalController,
               scrollDirection: Axis.horizontal,
               child: SizedBox(
                 width: desktopBodyWidth,
-                child: const _DashboardBody(),
+                child: _DashboardBody(verticalController: _verticalController),
               ),
             ),
           );
@@ -65,9 +89,16 @@ class DashboardScreen extends StatelessWidget {
   }
 }
 
-class _DashboardBody extends StatelessWidget {
-  const _DashboardBody();
+class _DashboardBody extends StatefulWidget {
+  const _DashboardBody({required this.verticalController});
 
+  final ScrollController verticalController;
+
+  @override
+  State<_DashboardBody> createState() => _DashboardBodyState();
+}
+
+class _DashboardBodyState extends State<_DashboardBody> {
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -130,7 +161,7 @@ class _DashboardBody extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 2),
                   _ActionButton(
                     onTap: () => showNotImplemented(context),
                     child: const SizedBox(
@@ -190,84 +221,144 @@ class _DashboardBody extends StatelessWidget {
         ),
         Expanded(
           child: Scrollbar(
+            controller: widget.verticalController,
             thumbVisibility: true,
             child: SingleChildScrollView(
+              controller: widget.verticalController,
               padding: const EdgeInsets.all(20),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(
-                    height: 225,
-                    child: Row(
-                      children: [
-                        Expanded(child: _ThreatScoreCard()),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: _KpiCard(
-                            icon: Icons.warning_amber_rounded,
-                            iconColor: Color(0xFFEF4444),
-                            iconBackground: Color(0x22EF4444),
-                            value: '23',
-                            label: 'Active Threats',
-                            delta: '+5',
-                            deltaColor: Color(0xFFF87171),
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(10, 12, 10, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      height: 225,
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: _HoverableCard(child: _ThreatScoreCard()),
                           ),
-                        ),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: _KpiCard(
-                            icon: Icons.show_chart_rounded,
-                            iconColor: Color(0xFF3B82F6),
-                            iconBackground: Color(0x223B82F6),
-                            value: '2.4M',
-                            label: 'Packets Analyzed',
-                            delta: '+12.5%',
-                            deltaColor: Color(0xFF98A2B3),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: _HoverableCard(
+                              child: _KpiCard(
+                                icon: Icons.warning_amber_rounded,
+                                iconColor: Color(0xFFEF4444),
+                                iconBackground: Color(0x22EF4444),
+                                value: '23',
+                                label: 'Active Threats',
+                                delta: '+5',
+                                deltaColor: Color(0xFFF87171),
+                              ),
+                            ),
                           ),
-                        ),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: _KpiCard(
-                            icon: Icons.language,
-                            iconColor: Color(0xFFF59E0B),
-                            iconBackground: Color(0x22F59E0B),
-                            value: '156',
-                            label: 'Suspicious IPs',
-                            delta: '-8',
-                            deltaColor: Color(0xFF34D399),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: _HoverableCard(
+                              child: _KpiCard(
+                                icon: Icons.show_chart_rounded,
+                                iconColor: Color(0xFF3B82F6),
+                                iconBackground: Color(0x223B82F6),
+                                value: '2.4M',
+                                label: 'Packets Analyzed',
+                                delta: '+12.5%',
+                                deltaColor: Color(0xFF98A2B3),
+                              ),
+                            ),
                           ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: _HoverableCard(
+                              child: _KpiCard(
+                                icon: Icons.language,
+                                iconColor: Color(0xFFF59E0B),
+                                iconBackground: Color(0x22F59E0B),
+                                value: '156',
+                                label: 'Suspicious IPs',
+                                delta: '-8',
+                                deltaColor: Color(0xFF34D399),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10, bottom: 6),
+                      child: SizedBox(
+                        height: 430,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: _HoverableCard(child: _TrafficCard()),
+                            ),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: _HoverableCard(child: _AlertsCard()),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                  SizedBox(height: 12),
-                  SizedBox(
-                    height: 430,
-                    child: Row(
-                      children: [
-                        Expanded(flex: 2, child: _TrafficCard()),
-                        SizedBox(width: 12),
-                        Expanded(child: _AlertsCard()),
-                      ],
+                    const SizedBox(height: 12),
+                    const SizedBox(
+                      height: 430,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _HoverableCard(
+                              child: _PacketClassificationCard(),
+                            ),
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: _HoverableCard(
+                              child: _MaliciousIPsTableCard(),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  SizedBox(height: 12),
-                  SizedBox(
-                    height: 430,
-                    child: Row(
-                      children: [
-                        Expanded(child: _PacketClassificationCard()),
-                        SizedBox(width: 12),
-                        Expanded(flex: 2, child: _MaliciousIPsTableCard()),
-                      ],
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _HoverableCard extends StatefulWidget {
+  const _HoverableCard({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_HoverableCard> createState() => _HoverableCardState();
+}
+
+class _HoverableCardState extends State<_HoverableCard> {
+  bool _isHovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovering = true),
+      onExit: (_) => setState(() => _isHovering = false),
+      child: Container(
+        decoration: _isHovering
+            ? BoxDecoration(
+                border: Border.all(color: const Color(0xFF22D3EE), width: 0.6),
+                borderRadius: BorderRadius.circular(12),
+              )
+            : null,
+        child: widget.child,
+      ),
     );
   }
 }
@@ -634,7 +725,7 @@ class _AlertsCard extends StatelessWidget {
           Expanded(
             child: ListView.separated(
               itemCount: alerts.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 final item = alerts[index];
                 final levelColor = item.$5;
@@ -937,7 +1028,7 @@ class _MaliciousIPsTableCard extends StatelessWidget {
           Expanded(
             child: ListView.separated(
               itemCount: rows.length,
-              separatorBuilder: (_, __) =>
+              separatorBuilder: (_, _) =>
                   const Divider(color: Color(0xFF1A1F2E), height: 1),
               itemBuilder: (context, index) {
                 final row = rows[index];
