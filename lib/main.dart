@@ -16,7 +16,12 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFF0A0E1A),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A1F2E)),
         textTheme: GoogleFonts.interTextTheme(),
+        textSelectionTheme: const TextSelectionThemeData(
+          selectionColor: Colors.white,
+          cursorColor: Colors.white,
+        ),
       ),
       home: const DashboardScreen(),
     );

@@ -73,6 +73,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.9"
+  dash:
+    dependency: "direct main"
+    description:
+      name: dash
+      sha256: "4500e308fdbb6a555a4ebcdbd852f58a351305176636dea20dc09e05812f6e2f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.7"
   fake_async:
     dependency: transitive
     description:
