@@ -1,24 +1,154 @@
 import 'package:flutter/material.dart';
+import './dashbaord/dashboard_screen.dart';
+import './packet_tracing/packet_tracing.dart';
+import './firewall_logs/firewall_logs.dart';
+import './virus_scanner/virus_scanner.dart';
+import './ip_analysis/ip_analysis.dart';
+import './reports/reports.dart';
+import './setings/settings.dart';
 
-class SidebarPanel extends StatelessWidget {
+/// Creates a fully configured SidebarPanel with all navigation callbacks
+Widget buildSidebarPanel(BuildContext context, int activePageIndex) {
+  return SidebarPanel(
+    activePageIndex: activePageIndex,
+    onNavigateDashboard: () {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+        (route) => false,
+      );
+    },
+    onNavigatePacketTracing: () {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const PacketTracingPage()),
+        (route) => false,
+      );
+    },
+    onNavigateFirewallLogs: () {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const FirewallLogsPage()),
+        (route) => false,
+      );
+    },
+    onNavigateVirusScanner: () {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const VirusScannerPage()),
+        (route) => false,
+      );
+    },
+    onNavigateIPLogAnalysis: () {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const IPLogAnalysisPage()),
+        (route) => false,
+      );
+    },
+    onNavigateReports: () {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const ReportsPage()),
+        (route) => false,
+      );
+    },
+    onNavigateSettings: () {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const SettingsPage()),
+        (route) => false,
+      );
+    },
+  );
+}
+
+class SidebarPanel extends StatefulWidget {
   const SidebarPanel({
     super.key,
-    this.onNavigateNotImplemented,
     this.onNavigateDashboard,
+    this.onNavigatePacketTracing,
+    this.onNavigateFirewallLogs,
+    this.onNavigateVirusScanner,
+    this.onNavigateIPLogAnalysis,
+    this.onNavigateReports,
+    this.onNavigateSettings,
+    this.activePageIndex = 0,
   });
 
-  final VoidCallback? onNavigateNotImplemented;
   final VoidCallback? onNavigateDashboard;
+  final VoidCallback? onNavigatePacketTracing;
+  final VoidCallback? onNavigateFirewallLogs;
+  final VoidCallback? onNavigateVirusScanner;
+  final VoidCallback? onNavigateIPLogAnalysis;
+  final VoidCallback? onNavigateReports;
+  final VoidCallback? onNavigateSettings;
+  final int activePageIndex;
 
-  void _openNotImplemented(BuildContext context) {
-    if (onNavigateNotImplemented != null) {
-      onNavigateNotImplemented!();
+  @override
+  State<SidebarPanel> createState() => _SidebarPanelState();
+}
+
+class _SidebarPanelState extends State<SidebarPanel> {
+  late int _activeIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _activeIndex = widget.activePageIndex;
+  }
+
+  @override
+  void didUpdateWidget(SidebarPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activePageIndex != widget.activePageIndex) {
+      setState(() => _activeIndex = widget.activePageIndex);
     }
   }
 
+  void _setActive(int index) {
+    setState(() => _activeIndex = index);
+  }
+
   void _openDashboard(BuildContext context) {
-    if (onNavigateDashboard != null) {
-      onNavigateDashboard!();
+    _setActive(0);
+    if (widget.onNavigateDashboard != null) {
+      widget.onNavigateDashboard!();
+    }
+  }
+
+  void _openPacketTracing(BuildContext context) {
+    _setActive(1);
+    if (widget.onNavigatePacketTracing != null) {
+      widget.onNavigatePacketTracing!();
+    }
+  }
+
+  void _openFirewallLogs(BuildContext context) {
+    _setActive(2);
+    if (widget.onNavigateFirewallLogs != null) {
+      widget.onNavigateFirewallLogs!();
+    }
+  }
+
+  void _openVirusScanner(BuildContext context) {
+    _setActive(3);
+    if (widget.onNavigateVirusScanner != null) {
+      widget.onNavigateVirusScanner!();
+    }
+  }
+
+  void _openIPLogAnalysis(BuildContext context) {
+    _setActive(4);
+    if (widget.onNavigateIPLogAnalysis != null) {
+      widget.onNavigateIPLogAnalysis!();
+    }
+  }
+
+  void _openReports(BuildContext context) {
+    _setActive(5);
+    if (widget.onNavigateReports != null) {
+      widget.onNavigateReports!();
+    }
+  }
+
+  void _openSettings(BuildContext context) {
+    _setActive(6);
+    if (widget.onNavigateSettings != null) {
+      widget.onNavigateSettings!();
     }
   }
 
@@ -73,38 +203,44 @@ class SidebarPanel extends StatelessWidget {
                 _NavTile(
                   icon: Icons.grid_view_rounded,
                   label: 'Dashboard',
-                  isActive: true,
+                  isActive: _activeIndex == 0,
                   onTap: () => _openDashboard(context),
                 ),
                 _NavTile(
                   icon: Icons.account_tree_outlined,
                   label: 'Packet Tracing',
-                  onTap: () => _openNotImplemented(context),
+                  isActive: _activeIndex == 1,
+                  onTap: () => _openPacketTracing(context),
                 ),
                 _NavTile(
                   icon: Icons.shield_outlined,
                   label: 'Firewall Logs',
-                  onTap: () => _openNotImplemented(context),
+                  isActive: _activeIndex == 2,
+                  onTap: () => _openFirewallLogs(context),
                 ),
                 _NavTile(
                   icon: Icons.bug_report_outlined,
                   label: 'Virus Scanner',
-                  onTap: () => _openNotImplemented(context),
+                  isActive: _activeIndex == 3,
+                  onTap: () => _openVirusScanner(context),
                 ),
                 _NavTile(
                   icon: Icons.location_on_outlined,
                   label: 'IP Analysis',
-                  onTap: () => _openNotImplemented(context),
+                  isActive: _activeIndex == 4,
+                  onTap: () => _openIPLogAnalysis(context),
                 ),
                 _NavTile(
                   icon: Icons.description_outlined,
                   label: 'Reports',
-                  onTap: () => _openNotImplemented(context),
+                  isActive: _activeIndex == 5,
+                  onTap: () => _openReports(context),
                 ),
                 _NavTile(
                   icon: Icons.settings_outlined,
                   label: 'Settings',
-                  onTap: () => _openNotImplemented(context),
+                  isActive: _activeIndex == 6,
+                  onTap: () => _openSettings(context),
                 ),
               ],
             ),

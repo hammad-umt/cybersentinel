@@ -8,9 +8,14 @@ void showNotImplemented(BuildContext context) {
 }
 
 class DashboardLayout extends StatelessWidget {
-  const DashboardLayout({super.key, required this.child});
+  const DashboardLayout({
+    super.key,
+    required this.child,
+    this.currentPageIndex = 0,
+  });
 
   final Widget child;
+  final int currentPageIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -20,15 +25,7 @@ class DashboardLayout extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SidebarPanel(
-              onNavigateNotImplemented: () => showNotImplemented(context),
-              onNavigateDashboard: () {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const DashboardScreen()),
-                  (route) => false,
-                );
-              },
-            ),
+            buildSidebarPanel(context, currentPageIndex),
             Expanded(child: child),
           ],
         ),
@@ -45,6 +42,24 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return const DashboardLayout(
+      currentPageIndex: 0,
+      child: _DashboardScreenContent(),
+    );
+  }
+}
+
+class _DashboardScreenContent extends StatefulWidget {
+  const _DashboardScreenContent();
+
+  @override
+  State<_DashboardScreenContent> createState() =>
+      _DashboardScreenContentState();
+}
+
+class _DashboardScreenContentState extends State<_DashboardScreenContent> {
   late ScrollController _horizontalController;
   late ScrollController _verticalController;
 
@@ -64,27 +79,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return DashboardLayout(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final desktopBodyWidth = constraints.maxWidth < 960
-              ? 960.0
-              : constraints.maxWidth;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final desktopBodyWidth = constraints.maxWidth < 960
+            ? 960.0
+            : constraints.maxWidth;
 
-          return Scrollbar(
+        return Scrollbar(
+          controller: _horizontalController,
+          thumbVisibility: true,
+          child: SingleChildScrollView(
             controller: _horizontalController,
-            thumbVisibility: true,
-            child: SingleChildScrollView(
-              controller: _horizontalController,
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                width: desktopBodyWidth,
-                child: _DashboardBody(verticalController: _verticalController),
-              ),
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: desktopBodyWidth,
+              child: _DashboardBody(verticalController: _verticalController),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }
