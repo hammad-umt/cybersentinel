@@ -14,14 +14,21 @@ class FirewallLogsPage extends StatelessWidget {
           children: [
             buildSidebarPanel(context, 2),
             Expanded(
-              child: Container(
-                color: const Color(0xFF1A1F2E),
-                child: const Center(
-                  child: Text(
-                    'Firewall Logs Content Goes Here',
-                    style: TextStyle(color: Colors.white, fontSize: 18),
+              child: Column(
+                children: [
+                  buildTopNavbar(context, 'Firewall Logs'),
+                  Expanded(
+                    child: Container(
+                      color: const Color(0xFF1A1F2E),
+                      child: const Center(
+                        child: Text(
+                          'Firewall Logs Content Goes Here',
+                          style: TextStyle(color: Colors.white, fontSize: 18),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ],

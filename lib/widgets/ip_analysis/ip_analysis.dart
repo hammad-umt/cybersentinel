@@ -14,14 +14,21 @@ class IPLogAnalysisPage extends StatelessWidget {
           children: [
             buildSidebarPanel(context, 4),
             Expanded(
-              child: Container(
-                color: const Color(0xFF1A1F2E),
-                child: const Center(
-                  child: Text(
-                    'IP Analysis Content Goes Here',
-                    style: TextStyle(color: Colors.white, fontSize: 18),
+              child: Column(
+                children: [
+                  buildTopNavbar(context, 'IP Analysis'),
+                  Expanded(
+                    child: Container(
+                      color: const Color(0xFF1A1F2E),
+                      child: const Center(
+                        child: Text(
+                          'IP Analysis Content Goes Here',
+                          style: TextStyle(color: Colors.white, fontSize: 18),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ],

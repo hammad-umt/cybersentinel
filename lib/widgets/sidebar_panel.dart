@@ -56,6 +56,144 @@ Widget buildSidebarPanel(BuildContext context, int activePageIndex) {
   );
 }
 
+/// Creates a consistent top navbar across all pages
+Widget buildTopNavbar(BuildContext context, String pageTitle) {
+  return Container(
+    height: 72,
+    padding: const EdgeInsets.symmetric(horizontal: 32),
+    decoration: const BoxDecoration(
+      color: Color(0xFF0F1420),
+      border: Border(bottom: BorderSide(color: Color(0xFF1A1F2E), width: 1)),
+    ),
+    child: Row(
+      children: [
+        Text(
+          pageTitle,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const Spacer(),
+        Row(
+          children: [
+            Container(
+              width: 340,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1F2E),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF2A2F3E)),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: const Row(
+                children: [
+                  Icon(Icons.search, color: Color(0xFF6B7280), size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      cursorColor: Color(0xFF22D3EE),
+                      decoration: InputDecoration(
+                        hintText: 'Global search...',
+                        hintStyle: TextStyle(
+                          color: Color(0xFF6B7280),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 2),
+            _TopNavbarActionButton(
+              onTap: () {},
+              child: const SizedBox(
+                width: 48,
+                height: 48,
+                child: Stack(
+                  children: [
+                    Center(
+                      child: Icon(
+                        Icons.notifications_none,
+                        color: Color(0xFF9CA3AF),
+                        size: 24,
+                      ),
+                    ),
+                    Positioned(
+                      right: 9,
+                      top: 9,
+                      child: Icon(
+                        Icons.circle,
+                        color: Color(0xFFEF4444),
+                        size: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _TopNavbarActionButton(
+              onTap: () {},
+              child: const SizedBox(
+                width: 48,
+                height: 48,
+                child: Center(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Color(0x3300D3FF),
+                      shape: BoxShape.circle,
+                    ),
+                    child: SizedBox(
+                      width: 38,
+                      height: 38,
+                      child: Icon(
+                        Icons.person_outline,
+                        color: Color(0xFF22D3EE),
+                        size: 22,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+class _TopNavbarActionButton extends StatelessWidget {
+  const _TopNavbarActionButton({required this.onTap, required this.child});
+
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        mouseCursor: SystemMouseCursors.click,
+        borderRadius: BorderRadius.circular(12),
+        child: child,
+      ),
+    );
+  }
+}
+
 class SidebarPanel extends StatefulWidget {
   const SidebarPanel({
     super.key,

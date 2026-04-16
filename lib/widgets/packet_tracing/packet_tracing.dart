@@ -14,14 +14,21 @@ class PacketTracingPage extends StatelessWidget {
           children: [
             buildSidebarPanel(context, 1),
             Expanded(
-              child: Container(
-                color: const Color(0xFF1A1F2E),
-                child: const Center(
-                  child: Text(
-                    'Packet Tracing Content Goes Here',
-                    style: TextStyle(color: Colors.white, fontSize: 18),
+              child: Column(
+                children: [
+                  buildTopNavbar(context, 'Packet Tracing'),
+                  Expanded(
+                    child: Container(
+                      color: const Color(0xFF1A1F2E),
+                      child: const Center(
+                        child: Text(
+                          'Packet Tracing Content Goes Here',
+                          style: TextStyle(color: Colors.white, fontSize: 18),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ],
