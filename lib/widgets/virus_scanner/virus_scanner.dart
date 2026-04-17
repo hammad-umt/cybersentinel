@@ -1,4 +1,5 @@
 import 'package:cybersentinel/widgets/sidebar_panel.dart';
+import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter/material.dart';
 
 class VirusScannerPage extends StatelessWidget {
@@ -37,6 +38,7 @@ class _VirusScannerContent extends StatefulWidget {
 
 class __VirusScannerContentState extends State<_VirusScannerContent> {
   String? selectedFileName;
+  bool isHovered = false;
 
   @override
   Widget build(BuildContext context) {
@@ -80,87 +82,92 @@ class __VirusScannerContentState extends State<_VirusScannerContent> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  Container(
-                    height: 350,
-                    width: 800,
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: Colors.white24,
-                        width: 2,
-                        strokeAlign: BorderSide.strokeAlignOutside,
+                  MouseRegion(
+                    onEnter: (_) => setState(() => isHovered = true),
+                    onExit: (_) => setState(() => isHovered = false),
+                    child: DottedBorder(
+                      options: RoundedRectDottedBorderOptions(
+                        dashPattern: [6, 4],
+                        strokeWidth: 2,
+                        color: isHovered ? Colors.cyan : Colors.white38,
+                        radius: Radius.circular(12),
                       ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              color: Colors.cyan.withOpacity(0.2),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.cloud_upload,
-                              size: 48,
-                              color: Colors.cyan,
-                            ),
-                          ),
-                          SizedBox(height: 16),
-                          Text(
-                            "Drop files here or click to browse",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          SizedBox(height: 16),
-                          Text(
-                            'Maximum file size: 256 MB',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                            ),
-                          ),
-                          SizedBox(height: 24),
-                          Container(
-                            width: 120,
-                            height: 50,
-                            child: TextButton(
-                              style: TextButton.styleFrom(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        height: 350,
+                        width: 800,
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 80,
+                                height: 80,
+                                decoration: BoxDecoration(
+                                  color: Colors.cyan.withOpacity(0.2),
+                                  shape: BoxShape.circle,
                                 ),
-                                backgroundColor: Colors.cyan,
-                                foregroundColor: Colors.white,
+                                child: Icon(
+                                  Icons.cloud_upload_outlined,
+                                  size: 48,
+                                  color: Colors.cyan,
+                                ),
                               ),
-                              onPressed: () {},
-                              child: Text(
-                                'Select File',
+                              SizedBox(height: 16),
+                              Text(
+                                "Drop files here or click to browse",
                                 style: TextStyle(
                                   color: Colors.white,
-                                  fontWeight: FontWeight.w700,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                            ),
-                          ),
-                          if (selectedFileName != null) ...[
-                            SizedBox(height: 12),
-                            Text(
-                              'File: $selectedFileName',
-                              style: TextStyle(
-                                color: Colors.cyan,
-                                fontSize: 12,
+                              SizedBox(height: 16),
+                              Text(
+                                'Maximum file size: 256 MB',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                ),
                               ),
-                            ),
-                          ],
-                        ],
+                              SizedBox(height: 24),
+                              Container(
+                                width: 120,
+                                height: 50,
+                                child: TextButton(
+                                  style: TextButton.styleFrom(
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    backgroundColor: Colors.cyan,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  onPressed: () {},
+                                  child: Text(
+                                    'Select File',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (selectedFileName != null) ...[
+                                SizedBox(height: 12),
+                                Text(
+                                  'File: $selectedFileName',
+                                  style: TextStyle(
+                                    color: Colors.cyan,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
+
                   SizedBox(height: 24),
                   Container(
                     width: 800,
@@ -177,10 +184,7 @@ class __VirusScannerContentState extends State<_VirusScannerContent> {
                         ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: Colors.white24,
-                            width: 1,
-                          ),
+                          borderSide: BorderSide(color: Colors.cyan, width: 1),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
