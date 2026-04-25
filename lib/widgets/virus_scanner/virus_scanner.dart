@@ -30,7 +30,7 @@ class VirusScannerPage extends StatelessWidget {
 }
 
 class _VirusScannerContent extends StatefulWidget {
-  const _VirusScannerContent({super.key});
+  const _VirusScannerContent();
 
   @override
   State<_VirusScannerContent> createState() => __VirusScannerContentState();
@@ -92,7 +92,7 @@ class __VirusScannerContentState extends State<_VirusScannerContent> {
                         color: isHovered ? Colors.cyan : Colors.white38,
                         radius: Radius.circular(12),
                       ),
-                      child: Container(
+                      child: SizedBox(
                         height: 350,
                         width: 800,
                         child: Center(
@@ -130,7 +130,7 @@ class __VirusScannerContentState extends State<_VirusScannerContent> {
                                 ),
                               ),
                               SizedBox(height: 24),
-                              Container(
+                              SizedBox(
                                 width: 120,
                                 height: 50,
                                 child: TextButton(
@@ -169,7 +169,7 @@ class __VirusScannerContentState extends State<_VirusScannerContent> {
                   ),
 
                   SizedBox(height: 24),
-                  Container(
+                  SizedBox(
                     width: 800,
                     height: 60,
                     child: TextField(
@@ -199,7 +199,7 @@ class __VirusScannerContentState extends State<_VirusScannerContent> {
                     ),
                   ),
                   SizedBox(height: 16),
-                  Container(
+                  SizedBox(
                     width: 800,
                     height: 50,
                     child: TextButton(

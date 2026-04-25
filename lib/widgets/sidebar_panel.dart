@@ -243,51 +243,37 @@ class _SidebarPanelState extends State<SidebarPanel> {
 
   void _openDashboard(BuildContext context) {
     _setActive(0);
-    if (widget.onNavigateDashboard != null) {
-      widget.onNavigateDashboard!();
-    }
+    widget.onNavigateDashboard?.call();
   }
 
   void _openPacketTracing(BuildContext context) {
     _setActive(1);
-    if (widget.onNavigatePacketTracing != null) {
-      widget.onNavigatePacketTracing!();
-    }
+    widget.onNavigatePacketTracing?.call();
   }
 
   void _openFirewallLogs(BuildContext context) {
     _setActive(2);
-    if (widget.onNavigateFirewallLogs != null) {
-      widget.onNavigateFirewallLogs!();
-    }
+    widget.onNavigateFirewallLogs?.call();
   }
 
   void _openVirusScanner(BuildContext context) {
     _setActive(3);
-    if (widget.onNavigateVirusScanner != null) {
-      widget.onNavigateVirusScanner!();
-    }
+    widget.onNavigateVirusScanner?.call();
   }
 
   void _openIPLogAnalysis(BuildContext context) {
     _setActive(4);
-    if (widget.onNavigateIPLogAnalysis != null) {
-      widget.onNavigateIPLogAnalysis!();
-    }
+    widget.onNavigateIPLogAnalysis?.call();
   }
 
   void _openReports(BuildContext context) {
     _setActive(5);
-    if (widget.onNavigateReports != null) {
-      widget.onNavigateReports!();
-    }
+    widget.onNavigateReports?.call();
   }
 
   void _openSettings(BuildContext context) {
     _setActive(6);
-    if (widget.onNavigateSettings != null) {
-      widget.onNavigateSettings!();
-    }
+    widget.onNavigateSettings?.call();
   }
 
   @override

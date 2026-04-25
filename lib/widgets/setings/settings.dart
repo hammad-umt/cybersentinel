@@ -29,7 +29,7 @@ class SettingsPage extends StatelessWidget {
 }
 
 class _SettingsPageContent extends StatefulWidget {
-  const _SettingsPageContent({super.key});
+  const _SettingsPageContent();
 
   @override
   State<_SettingsPageContent> createState() => __SettingsPageContentState();
@@ -281,7 +281,7 @@ class __SettingsPageContentState extends State<_SettingsPageContent> {
                               backgroundMonitoring = value;
                             });
                           },
-                          activeColor: Color(0xFF06B6D4),
+                          activeThumbColor: Color(0xFF06B6D4),
                           inactiveThumbColor: Color(0xFF6B7280),
                           inactiveTrackColor: Color(0xFF3A3F4E),
                         ),
@@ -372,7 +372,7 @@ class __SettingsPageContentState extends State<_SettingsPageContent> {
                               emailAlerts = value;
                             });
                           },
-                          activeColor: Color(0xFF06B6D4),
+                          activeThumbColor: Color(0xFF06B6D4),
                           inactiveThumbColor: Color(0xFF6B7280),
                           inactiveTrackColor: Color(0xFF3A3F4E),
                         ),
@@ -421,7 +421,7 @@ class __SettingsPageContentState extends State<_SettingsPageContent> {
                               pushNotifications = value;
                             });
                           },
-                          activeColor: Color(0xFF06B6D4),
+                          activeThumbColor: Color(0xFF06B6D4),
                           inactiveThumbColor: Color(0xFF6B7280),
                           inactiveTrackColor: Color(0xFF3A3F4E),
                         ),

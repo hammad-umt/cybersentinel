@@ -137,6 +137,10 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
     }
   }
 
+  String _packetField(Map<String, String> packet, String key, String fallback) {
+    return packet[key] ?? fallback;
+  }
+
   List<TableRow> _buildDataRows() {
     final List<TableRow> rows = [];
 
@@ -151,7 +155,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
               rowIndex: i,
               isSelected: isSelected,
               child: Text(
-                packet['ip']!,
+                _packetField(packet, 'ip', '-'),
                 style: TextStyle(
                   color: isSelected ? Colors.white : const Color(0xFFB8C4DD),
                   fontSize: 13,
@@ -162,7 +166,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
               rowIndex: i,
               isSelected: isSelected,
               child: Text(
-                packet['port']!,
+                _packetField(packet, 'port', '-'),
                 style: TextStyle(
                   color: isSelected ? Colors.white : const Color(0xFFB8C4DD),
                   fontSize: 13,
@@ -173,7 +177,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
               rowIndex: i,
               isSelected: isSelected,
               child: Text(
-                packet['protocol']!,
+                _packetField(packet, 'protocol', '-'),
                 style: TextStyle(
                   color: isSelected ? Colors.white : const Color(0xFFB8C4DD),
                   fontSize: 13,
@@ -184,7 +188,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
               rowIndex: i,
               isSelected: isSelected,
               child: Text(
-                packet['size']!,
+                _packetField(packet, 'size', '-'),
                 style: TextStyle(
                   color: isSelected ? Colors.white : const Color(0xFFB8C4DD),
                   fontSize: 13,
@@ -202,17 +206,23 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                 ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
-                  color: getStatusColor(packet['status']!).withOpacity(0.07),
+                  color: getStatusColor(
+                    _packetField(packet, 'status', 'normal'),
+                  ).withOpacity(0.07),
                   border: Border.all(
-                    color: getStatusColor(packet['status']!),
+                    color: getStatusColor(
+                      _packetField(packet, 'status', 'normal'),
+                    ),
                     width: 0.5,
                   ),
                 ),
                 child: Text(
-                  packet['status']!,
+                  _packetField(packet, 'status', 'normal'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: getStatusColor(packet['status']!),
+                    color: getStatusColor(
+                      _packetField(packet, 'status', 'normal'),
+                    ),
                     fontSize: 12,
                   ),
                 ),
@@ -222,7 +232,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
               rowIndex: i,
               isSelected: isSelected,
               child: Text(
-                packet['time']!,
+                _packetField(packet, 'time', '-'),
                 style: TextStyle(
                   color: isSelected ? Colors.white : const Color(0xFFB8C4DD),
                   fontSize: 15,
@@ -290,7 +300,8 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
 
   Widget _buildPacketDetailsPanel() {
     final packet = _selectedPacket;
-    final statusColor = getStatusColor(packet['status']!);
+    final status = _packetField(packet, 'status', 'normal');
+    final statusColor = getStatusColor(status);
 
     return Padding(
       padding: const EdgeInsets.only(top: 18.0, right: 18.0, bottom: 18.0),
@@ -314,10 +325,10 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
               ),
             ),
             const SizedBox(height: 18),
-            _buildDetailItem('Source IP', packet['ip']!),
-            _buildDetailItem('Port', packet['port']!),
-            _buildDetailItem('Protocol', packet['protocol']!),
-            _buildDetailItem('Packet Size', packet['size']!),
+            _buildDetailItem('Source IP', _packetField(packet, 'ip', '-')),
+            _buildDetailItem('Port', _packetField(packet, 'port', '-')),
+            _buildDetailItem('Protocol', _packetField(packet, 'protocol', '-')),
+            _buildDetailItem('Packet Size', _packetField(packet, 'size', '-')),
             const Text(
               'ML Classification',
               style: TextStyle(color: Color(0xFF7F8AA8), fontSize: 13),
@@ -331,12 +342,12 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                 color: statusColor.withOpacity(0.12),
               ),
               child: Text(
-                _getPacketClassification(packet['status']!),
+                _getPacketClassification(status),
                 style: TextStyle(color: statusColor, fontSize: 13),
               ),
             ),
             const SizedBox(height: 18),
-            _buildDetailItem('Timestamp', packet['time']!),
+            _buildDetailItem('Timestamp', _packetField(packet, 'time', '-')),
             const Divider(color: Color(0xFF20283A), height: 24),
             const Text(
               'Raw Packet Data',
@@ -497,7 +508,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                             ],
                             onChanged: (value) {
                               setState(() {
-                                _selectedProtocol = value!;
+                                _selectedProtocol = value ?? 'all';
                               });
                             },
                           ),
@@ -550,7 +561,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                             ],
                             onChanged: (String? value) {
                               setState(() {
-                                _riskLevel = value!;
+                                _riskLevel = value ?? 'all';
                               });
                             },
                           ),
