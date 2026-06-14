@@ -1,0 +1,40 @@
+# Environment and secrets
+**/.env
+!**/.env.example
+
+# Python virtual environments
+**/.venv/
+**/venv/
+
+# Python generated files
+**/__pycache__/
+*.py[cod]
+*.pyo
+
+# Local databases and runtime outputs
+*.db
+*.sqlite
+*.sqlite3
+logs/
+uploads/
+
+# Test/type/lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Large datasets and generated ML artifacts
+supervised_learning/dataset/*
+!supervised_learning/dataset/README.md
+supervised_learning/models/*
+!supervised_learning/models/README.md
+unsupervised_learning/models/*
+!unsupervised_learning/models/README.md
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
