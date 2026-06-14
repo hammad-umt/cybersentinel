@@ -16,7 +16,7 @@ Flutter usage:
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -29,8 +29,9 @@ class FlowFeatures(BaseModel):
     """
     One network flow record.
     Field names match CICIDS2017 column names that your supervised model expects.
-    All fields are optional — the classifier handles missing values with imputation.
-    Flutter can send whatever fields it has; missing ones default to None.
+    All fields are optional. The service accepts partial live flows, but the
+    classifier returns Insufficient Evidence when coverage is too low for a
+    trustworthy security verdict.
     """
 
     # Flow-level timing
@@ -89,7 +90,10 @@ class FlowFeatures(BaseModel):
     dst_port: Optional[int] = Field(None, description="Destination port for display only")
     protocol: Optional[str] = Field(None, description="Protocol for display only")
 
-    model_config = {"populate_by_name": True}  # accept both alias and field name
+    model_config = {
+        "populate_by_name": True,  # accept both alias and field name
+        "extra": "allow",         # preserve Zeek/Suricata/live-flow aliases
+    }
 
 
 class PacketClassifyRequest(BaseModel):
@@ -115,8 +119,8 @@ class PacketPrediction(BaseModel):
     ML result for one flow.
     Flutter uses 'prediction' to colour-code the row in the UI table.
     """
-    prediction: str = Field(
-        description="Normal | Suspicious | Malicious"
+    prediction: Literal["Normal", "Suspicious", "Malicious", "Insufficient Evidence"] = Field(
+        description="Normal | Suspicious | Malicious | Insufficient Evidence"
     )
     confidence: float = Field(
         description="Confidence of the top prediction (0.0 – 1.0)"
@@ -169,6 +173,7 @@ class PacketBatchResponse(BaseModel):
     normal_count: int = 0
     suspicious_count: int = 0
     malicious_count: int = 0
+    insufficient_evidence_count: int = 0
 
     # Average threat score across all flows in this batch
     avg_threat_score: float = 0.0
@@ -185,7 +190,7 @@ class PacketEventOut(BaseModel):
     dst_ip: Optional[str] = None
     dst_port: Optional[int] = None
     protocol: Optional[str] = None
-    prediction: str
+    prediction: Literal["Normal", "Suspicious", "Malicious", "Insufficient Evidence"]
     confidence: float
     threat_score_contribution: float
     source: str

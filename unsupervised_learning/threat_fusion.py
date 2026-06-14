@@ -28,6 +28,9 @@ class ThreatSignalEmitter:
                 75.0 if cluster["cluster_label"] == "Attack" else 0.0,
             )
 
+            if self._is_low_evidence_isolated_anomaly(anomaly, cluster):
+                continue
+
             if fused_score < self.config.severity_suspicious:
                 continue
 
@@ -91,6 +94,16 @@ class ThreatSignalEmitter:
         elif cluster["cluster_label"] == "Isolated":
             score = max(score, 40.0)
         return score
+
+    @staticmethod
+    def _is_low_evidence_isolated_anomaly(anomaly: Dict[str, object], cluster: Dict[str, object]) -> bool:
+        """Suppress anomaly-only alerts that have no firewall attack evidence."""
+        return (
+            bool(anomaly["consensus_anomaly"])
+            and cluster["cluster_label"] in {"Normal", "Isolated"}
+            and int(cluster["attack_signals"]) == 0
+            and float(cluster["block_ratio"]) == 0.0
+        )
 
     def _severity(self, score: float) -> str:
         if score >= self.config.severity_critical:

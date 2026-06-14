@@ -72,8 +72,8 @@ class PacketEvent(Base):
 
     # ML output
     prediction: Mapped[str] = mapped_column(
-        String(20), index=True, nullable=False
-    )  # Normal | Suspicious | Malicious
+        String(32), index=True, nullable=False
+    )  # Normal | Suspicious | Malicious | Insufficient Evidence
 
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     prob_normal: Mapped[float | None] = mapped_column(Float)

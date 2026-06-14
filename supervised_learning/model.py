@@ -46,6 +46,9 @@ log = logging.getLogger(__name__)
 
 RANDOM_STATE = 42
 ARTIFACT_BUNDLE = "packet_classifier_pipeline.joblib"
+MIN_PRODUCTION_FEATURE_COVERAGE = 0.65
+DEGRADED_FEATURE_COVERAGE = 0.90
+INSUFFICIENT_EVIDENCE_LABEL = "Insufficient Evidence"
 
 
 LABEL_MAP = {
@@ -271,6 +274,18 @@ class CyberSentinelPacketClassifier:
             for class_name, idx in zip(self.label_encoder.classes_, range(len(self.label_encoder.classes_))):
                 result[f"prob_{class_name}"] = probabilities[:, idx]
             result["confidence"] = probabilities.max(axis=1)
+        else:
+            result["confidence"] = np.nan
+
+        insufficient_evidence = compatibility["feature_coverage"] < MIN_PRODUCTION_FEATURE_COVERAGE
+        degraded_evidence = (
+            compatibility["feature_coverage"] >= MIN_PRODUCTION_FEATURE_COVERAGE
+        ) & (compatibility["feature_coverage"] < DEGRADED_FEATURE_COVERAGE)
+        result.loc[insufficient_evidence, "prediction"] = INSUFFICIENT_EVIDENCE_LABEL
+        result.loc[insufficient_evidence, "confidence"] = 0.0
+        result.loc[degraded_evidence, "confidence"] = (
+            result.loc[degraded_evidence, "confidence"] * compatibility.loc[degraded_evidence, "feature_coverage"]
+        )
         result["feature_coverage"] = compatibility["feature_coverage"]
         result["missing_feature_count"] = compatibility["missing_feature_count"]
         result["missing_features"] = compatibility["missing_features"]
@@ -429,10 +444,11 @@ class CyberSentinelPacketClassifier:
                 normalized[feature] = np.nan
         X = coerce_numeric_features(normalized, self.features)
         compatibility = assess_feature_coverage(X)
-        low_coverage = compatibility["feature_coverage"] < 0.65
+        low_coverage = compatibility["feature_coverage"] < MIN_PRODUCTION_FEATURE_COVERAGE
         if low_coverage.any():
             log.warning(
                 "Live traffic compatibility warning: %s row(s) have <65%% feature coverage. "
+                "Returning Insufficient Evidence instead of a Normal/Suspicious/Malicious verdict. "
                 "Prefer CICFlowMeter-compatible flow extraction for production-quality predictions.",
                 int(low_coverage.sum()),
             )

@@ -44,7 +44,7 @@ def find_default_firewall_log_paths() -> list[Path]:
     candidates = [Path(WINDOWS_FIREWALL_LOG_PATH), *(Path(path) for path in LINUX_FIREWALL_LOG_PATHS)]
     return [path for path in candidates if path.exists()]
 
-def read_windows_firewall_log(path: str) -> pd.DataFrame:
+def read_windows_firewall_log(path: str | Path) -> pd.DataFrame:
     """
     Reads pfirewall.log and maps Windows column names
     to CyberSentinel canonical column names.
@@ -53,31 +53,33 @@ def read_windows_firewall_log(path: str) -> pd.DataFrame:
     if not log_path.exists():
         raise FileNotFoundError(f"Log file not found: {path}")
 
-    # Skip comment lines starting with #
     rows = []
+    windows_cols = None
     with open(log_path, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
             line = line.strip()
-            if line.startswith("#") or not line:
+            if not line:
+                continue
+            if line.lower().startswith("#fields:"):
+                windows_cols = line.split(":", 1)[1].strip().split()
+                continue
+            if line.startswith("#"):
                 continue
             rows.append(line.split())
 
     if not rows:
         raise ValueError("Log file is empty or has no data rows.")
 
-    # Windows firewall fixed column order
-    windows_cols = [
-        "date", "time", "action", "protocol",
-        "src-ip", "dst-ip", "src-port", "dst-port",
-        "size", "tcpflags", "tcpsyn", "tcpack",
-        "tcpwin", "icmptype", "icmpcode", "info", "path"
-    ]
+    if windows_cols is None:
+        windows_cols = [
+            "date", "time", "action", "protocol",
+            "src-ip", "dst-ip", "src-port", "dst-port",
+            "size", "tcpflags", "tcpsyn", "tcpack",
+            "tcpwin", "icmptype", "icmpcode", "info", "path",
+        ]
 
-    df = pd.DataFrame(rows)
-
-    # Only take columns we have
-    col_count = min(len(windows_cols), df.shape[1])
-    df.columns = windows_cols[:col_count]
+    normalized_rows = [_fit_row_to_columns(row, len(windows_cols)) for row in rows]
+    df = pd.DataFrame(normalized_rows, columns=windows_cols)
 
     # Build canonical columns your pipeline expects
     df["timestamp"] = pd.to_datetime(
@@ -88,7 +90,8 @@ def read_windows_firewall_log(path: str) -> pd.DataFrame:
     df["dst_ip"]   = df["dst-ip"]
     df["dst_port"] = pd.to_numeric(df["dst-port"], errors="coerce")
     df["protocol"] = df["protocol"].str.upper()
-    df["pkt_size"] = pd.to_numeric(df["size"], errors="coerce").fillna(400)
+    size_column = "size" if "size" in df.columns else "bytes"
+    df["pkt_size"] = pd.to_numeric(df.get(size_column), errors="coerce").fillna(400)
     df["action"]   = df["action"].str.upper()
     df["is_block"] = df["action"].isin(["DROP", "DENY", "BLOCK"]).astype(int)
 
@@ -100,6 +103,14 @@ def read_windows_firewall_log(path: str) -> pd.DataFrame:
         "dst_port", "protocol", "pkt_size",
         "is_block", "action"
     ]]
+
+
+def _fit_row_to_columns(row: list[str], column_count: int) -> list[str | None]:
+    if len(row) < column_count:
+        return row + [None] * (column_count - len(row))
+    if len(row) > column_count:
+        return row[: column_count - 1] + [" ".join(row[column_count - 1 :])]
+    return row
 
 
 def read_iptables_firewall_log(path: str | Path) -> pd.DataFrame:

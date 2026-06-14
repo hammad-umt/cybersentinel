@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from model import CyberSentinelPacketClassifier
+from supervised_learning.model import CyberSentinelPacketClassifier
 
 
 MODEL_DIR = Path("models")

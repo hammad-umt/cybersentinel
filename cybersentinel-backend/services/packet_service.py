@@ -46,21 +46,35 @@ _PREDICTION_BASE_SCORE: dict[str, float] = {
     "Normal": 0.0,
     "Suspicious": 50.0,
     "Malicious": 85.0,
+    "Insufficient Evidence": 0.0,
 }
 
 
-def _threat_score(prediction: str, confidence: float) -> float:
+def _threat_score(
+    prediction: str,
+    confidence: float,
+    prob_suspicious: float | None = None,
+    prob_malicious: float | None = None,
+    feature_coverage: float | None = None,
+) -> float:
     """
-    Scale the base score by confidence so a low-confidence Malicious
-    prediction scores lower than a high-confidence one.
-    e.g. Malicious @ 0.95 confidence → 80.75
-         Suspicious @ 0.60 confidence → 30.0
+    Score risk from attack probability, not only the winning class.
+
+    This prevents a Normal argmax from erasing meaningful Suspicious/Malicious
+    probability mass. Low feature coverage reduces the score because the ML
+    evidence itself is weak.
     """
-    base = _PREDICTION_BASE_SCORE.get(prediction, 0.0)
     if not math.isfinite(confidence):
         confidence = 0.0
     confidence = max(0.0, min(confidence, 1.0))
-    return round(base * confidence, 2)
+
+    suspicious = max(0.0, min(prob_suspicious or 0.0, 1.0))
+    malicious = max(0.0, min(prob_malicious or 0.0, 1.0))
+    probability_score = 100.0 * ((0.35 * suspicious) + (0.75 * malicious))
+
+    base = _PREDICTION_BASE_SCORE.get(prediction, 0.0) * confidence
+    coverage_factor = max(0.0, min(feature_coverage if feature_coverage is not None else 1.0, 1.0))
+    return round(min(100.0, max(base, probability_score) * coverage_factor), 2)
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +261,17 @@ def _parse_prediction(row: pd.Series) -> PacketPrediction:
     missing_count = int(missing_count_raw) if missing_count_raw is not None and not _is_nan(missing_count_raw) else None
     traffic_schema = str(row.get("traffic_schema", "")) or None
 
-    score = _threat_score(prediction, confidence)
+    if traffic_schema == "insufficient-live-flow-features":
+        prediction = "Insufficient Evidence"
+        confidence = 0.0
+
+    score = _threat_score(
+        prediction,
+        confidence,
+        prob_suspicious=prob_suspicious,
+        prob_malicious=prob_malicious,
+        feature_coverage=feature_coverage,
+    )
 
     return PacketPrediction(
         prediction=prediction,
@@ -267,6 +291,7 @@ def _build_batch_response(predictions: List[PacketPrediction]) -> PacketBatchRes
     normal = sum(1 for p in predictions if p.prediction == "Normal")
     suspicious = sum(1 for p in predictions if p.prediction == "Suspicious")
     malicious = sum(1 for p in predictions if p.prediction == "Malicious")
+    insufficient = sum(1 for p in predictions if p.prediction == "Insufficient Evidence")
 
     scores = [p.threat_score_contribution for p in predictions]
     avg_score = round(sum(scores) / len(scores), 2) if scores else 0.0
@@ -278,6 +303,7 @@ def _build_batch_response(predictions: List[PacketPrediction]) -> PacketBatchRes
         normal_count=normal,
         suspicious_count=suspicious,
         malicious_count=malicious,
+        insufficient_evidence_count=insufficient,
         avg_threat_score=avg_score,
     )
 
