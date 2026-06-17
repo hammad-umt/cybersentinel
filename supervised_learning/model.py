@@ -27,6 +27,8 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import (
     accuracy_score,
@@ -47,6 +49,8 @@ log = logging.getLogger(__name__)
 
 RANDOM_STATE = 42
 ARTIFACT_BUNDLE = "packet_classifier_pipeline.joblib"
+DEFAULT_MODEL_TYPE = "random_forest"
+MODEL_TYPES = ("random_forest", "decision_tree", "svm")
 MIN_PRODUCTION_FEATURE_COVERAGE = 0.65
 DEGRADED_FEATURE_COVERAGE = 0.90
 INSUFFICIENT_EVIDENCE_LABEL = "Insufficient Evidence"
@@ -83,6 +87,43 @@ LABEL_MAP = {
     "Web Attack \ufffd Brute Force": "Malicious",
     "Web Attack \ufffd XSS": "Malicious",
     "Web Attack \ufffd Sql Injection": "Malicious",
+}
+
+
+# UNSW-NB15 uses different column names and label fields than CICIDS2017.
+# label: 0=normal, 1=attack; attack_cat: category string when label=1.
+UNSW_LABEL_MAP = {
+    "Analysis": "Suspicious",
+    "Reconnaissance": "Suspicious",
+    "Fuzzers": "Suspicious",
+    "DoS": "Malicious",
+    "Exploits": "Malicious",
+    "Backdoors": "Malicious",
+    "Shellcode": "Malicious",
+    "Worms": "Malicious",
+    "Generic": "Malicious",
+}
+
+# Map UNSW-NB15 numeric columns onto CICIDS-style feature names for training.
+# CICIDS uses microsecond flow duration; UNSW `dur` is seconds.
+UNSW_FEATURE_RENAME = {
+    "dur": "Flow Duration",
+    "spkts": "Total Fwd Packets",
+    "dpkts": "Total Backward Packets",
+    "sbytes": "Total Length of Fwd Packets",
+    "dbytes": "Total Length of Bwd Packets",
+    "rate": "Flow Packets/s",
+    "sload": "Flow Bytes/s",
+    "sintpkt": "Flow IAT Mean",
+    "dintpkt": "Bwd IAT Mean",
+    "sinpkt": "Fwd IAT Mean",
+    "dinpkt": "Bwd IAT Mean",
+    "smean": "Fwd Packet Length Mean",
+    "dmean": "Bwd Packet Length Mean",
+    "sjit": "Packet Length Std",
+    "djit": "Packet Length Std",
+    "swin": "Init_Win_bytes_forward",
+    "dwin": "Init_Win_bytes_backward",
 }
 
 
@@ -226,6 +267,7 @@ class CyberSentinelPacketClassifier:
 
     features: list[str] = field(default_factory=lambda: list(SELECTED_FEATURES))
     random_state: int = RANDOM_STATE
+    model_type: str = DEFAULT_MODEL_TYPE
     pipeline: Pipeline | None = None
     label_encoder: LabelEncoder | None = None
     training_report: TrainingReport | None = None
@@ -237,7 +279,10 @@ class CyberSentinelPacketClassifier:
         cv_folds: int = 0,
     ) -> TrainingReport:
         """Clean labels, split data, fit preprocessing on train only, and evaluate."""
-        prepared = prepare_training_frame(df)
+        if "class" in df.columns:
+            prepared = df.copy()
+        else:
+            prepared = prepare_training_frame(df)
         prepared = prepared.drop_duplicates()
         log.info("Rows after label cleaning and duplicate removal: %s", f"{len(prepared):,}")
 
@@ -254,7 +299,7 @@ class CyberSentinelPacketClassifier:
             class_names=list(self.label_encoder.classes_),
         )
 
-        self.pipeline = self._build_pipeline()
+        self.pipeline = self._build_pipeline(self.model_type)
         self.pipeline.fit(X_train, y_train)
         self.training_report = self.evaluate(X_test, y_test, y)
 
@@ -304,20 +349,26 @@ class CyberSentinelPacketClassifier:
             "pipeline": self.pipeline,
             "label_encoder": self.label_encoder,
             "features": self.features,
+            "model_type": self.model_type,
             "training_report": self.training_report.__dict__ if self.training_report else None,
             "label_map": LABEL_MAP,
             "live_feature_aliases": LIVE_FEATURE_ALIASES,
             "required_features": self.features,
         }
-        bundle_path = output_path / ARTIFACT_BUNDLE
-        joblib.dump(bundle, bundle_path)
+        typed_bundle = output_path / artifact_bundle_name(self.model_type)
+        joblib.dump(bundle, typed_bundle)
 
-        model = self.pipeline.named_steps["model"]
-        scaler = self.pipeline.named_steps["scaler"]
-        joblib.dump(model, output_path / "packet_classifier.pkl")
-        joblib.dump(scaler, output_path / "packet_scaler.pkl")
-        joblib.dump(self.label_encoder, output_path / "packet_label_encoder.pkl")
-        joblib.dump(self.features, output_path / "packet_features.pkl")
+        bundle_path = typed_bundle
+        if self.model_type == DEFAULT_MODEL_TYPE:
+            legacy_bundle = output_path / ARTIFACT_BUNDLE
+            joblib.dump(bundle, legacy_bundle)
+            bundle_path = legacy_bundle
+            model = self.pipeline.named_steps["model"]
+            scaler = self.pipeline.named_steps["scaler"]
+            joblib.dump(model, output_path / "packet_classifier.pkl")
+            joblib.dump(scaler, output_path / "packet_scaler.pkl")
+            joblib.dump(self.label_encoder, output_path / "packet_label_encoder.pkl")
+            joblib.dump(self.features, output_path / "packet_features.pkl")
 
         metrics_path = output_path / "packet_classifier_metrics.json"
         if self.training_report:
@@ -335,20 +386,34 @@ class CyberSentinelPacketClassifier:
         }
 
     @classmethod
-    def load_model(cls, model_dir: str | Path) -> "CyberSentinelPacketClassifier":
-        """Load the preferred bundled artifact, with fallback to legacy files."""
+    def load_model(
+        cls,
+        model_dir: str | Path,
+        model_type: str = DEFAULT_MODEL_TYPE,
+    ) -> "CyberSentinelPacketClassifier":
+        """Load a typed bundle, with fallback to legacy random_forest artifacts."""
         model_path = Path(model_dir)
-        bundle_path = model_path / ARTIFACT_BUNDLE
+        typed_path = model_path / artifact_bundle_name(model_type)
+        bundle_path = typed_path if typed_path.exists() else None
+        if bundle_path is None and model_type == DEFAULT_MODEL_TYPE:
+            legacy_path = model_path / ARTIFACT_BUNDLE
+            bundle_path = legacy_path if legacy_path.exists() else None
 
-        instance = cls()
-        if bundle_path.exists():
+        instance = cls(model_type=model_type)
+        if bundle_path is not None and bundle_path.exists():
             bundle = joblib.load(bundle_path)
             instance.pipeline = bundle["pipeline"]
             instance.label_encoder = bundle["label_encoder"]
             instance.features = list(bundle["features"])
+            instance.model_type = str(bundle.get("model_type", model_type))
             report = bundle.get("training_report")
             instance.training_report = TrainingReport(**report) if report else None
             return instance
+
+        if model_type != DEFAULT_MODEL_TYPE:
+            raise FileNotFoundError(
+                f"Classifier bundle not found for model_type={model_type!r} in {model_path}"
+            )
 
         model = joblib.load(model_path / "packet_classifier.pkl")
         scaler = joblib.load(model_path / "packet_scaler.pkl")
@@ -411,17 +476,38 @@ class CyberSentinelPacketClassifier:
         log_training_report(report)
         return report
 
-    def _build_pipeline(self) -> Pipeline:
-        model = RandomForestClassifier(
-            n_estimators=300,
-            max_depth=None,
-            min_samples_split=4,
-            min_samples_leaf=2,
-            max_features="sqrt",
-            class_weight="balanced_subsample",
-            n_jobs=-1,
-            random_state=self.random_state,
-        )
+    def _build_pipeline(self, model_type: str = DEFAULT_MODEL_TYPE) -> Pipeline:
+        if model_type not in MODEL_TYPES:
+            raise ValueError(f"Unsupported model_type {model_type!r}. Choose from {MODEL_TYPES}.")
+
+        if model_type == "decision_tree":
+            model = DecisionTreeClassifier(
+                max_depth=24,
+                min_samples_split=4,
+                min_samples_leaf=2,
+                class_weight="balanced",
+                random_state=self.random_state,
+            )
+        elif model_type == "svm":
+            model = SVC(
+                kernel="rbf",
+                C=1.0,
+                gamma="scale",
+                class_weight="balanced",
+                probability=True,
+                random_state=self.random_state,
+            )
+        else:
+            model = RandomForestClassifier(
+                n_estimators=300,
+                max_depth=None,
+                min_samples_split=4,
+                min_samples_leaf=2,
+                max_features="sqrt",
+                class_weight="balanced_subsample",
+                n_jobs=-1,
+                random_state=self.random_state,
+            )
         return Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="median")),
@@ -474,7 +560,7 @@ class CyberSentinelPacketClassifier:
             return
         cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=self.random_state)
         scores = cross_val_score(
-            self._build_pipeline(),
+            self._build_pipeline(self.model_type),
             X_train,
             y_train,
             cv=cv,
@@ -488,6 +574,10 @@ class CyberSentinelPacketClassifier:
     def _ensure_loaded(self) -> None:
         if self.pipeline is None or self.label_encoder is None:
             raise RuntimeError("Model is not trained or loaded.")
+
+
+def artifact_bundle_name(model_type: str) -> str:
+    return f"packet_classifier_pipeline.{model_type}.joblib"
 
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -647,6 +737,52 @@ def prepare_training_frame(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def prepare_unsw_training_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normalize UNSW-NB15 rows into the shared 3-class training schema.
+
+    UNSW-NB15 schema differs from CICIDS2017:
+      - Uses lowercase columns such as dur/spkts/dbytes instead of Flow Duration/Total Fwd Packets.
+      - Uses numeric `label` (0/1) plus string `attack_cat` instead of a single Label column.
+    """
+    frame = df.copy()
+    frame.columns = [str(column).strip().lower() for column in frame.columns]
+
+    if "attack_cat" in frame.columns:
+        attack_cat = frame["attack_cat"].fillna("").astype(str).str.strip()
+    else:
+        attack_cat = pd.Series([""] * len(frame), index=frame.index)
+
+    if "label" in frame.columns:
+        numeric_label = pd.to_numeric(frame["label"], errors="coerce").fillna(1).astype(int)
+        is_normal = numeric_label == 0
+    else:
+        is_normal = attack_cat.eq("") | attack_cat.str.lower().eq("normal")
+        numeric_label = (~is_normal).astype(int)
+
+    mapped = attack_cat.map(UNSW_LABEL_MAP)
+    frame["class"] = np.where(is_normal, "Normal", mapped)
+    frame.loc[frame["class"].isna(), "class"] = np.where(
+        numeric_label.loc[frame["class"].isna()] == 0,
+        "Normal",
+        "Malicious",
+    )
+    frame = frame.dropna(subset=["class"])
+
+    if "dur" in frame.columns:
+        frame["Flow Duration"] = pd.to_numeric(frame["dur"], errors="coerce") * MICROSECONDS_PER_SECOND
+
+    for unsw_col, cicids_col in UNSW_FEATURE_RENAME.items():
+        if unsw_col in frame.columns and cicids_col not in frame.columns:
+            frame[cicids_col] = pd.to_numeric(frame[unsw_col], errors="coerce")
+
+    leak_columns = sorted({"id", "proto", "service", "state", "label", "attack_cat"}.intersection(frame.columns))
+    if leak_columns:
+        log.info("Ignoring UNSW identifier/categorical columns during training: %s", leak_columns)
+
+    return frame
+
+
 def coerce_numeric_features(df: pd.DataFrame, features: list[str]) -> pd.DataFrame:
     X = df.loc[:, features].copy()
     for column in X.columns:
@@ -749,6 +885,60 @@ def load_cicids2017(
     return df
 
 
+def load_unsw_nb15(
+    data_path: str | Path,
+    sample: int | None = None,
+    rows_per_file: int | None = DEFAULT_TRAINING_ROWS_PER_FILE,
+) -> pd.DataFrame:
+    """Load UNSW-NB15 CSV files from a file or directory."""
+    path = Path(data_path)
+    if path.is_file():
+        csv_files = [path]
+    else:
+        csv_files = [Path(file) for file in glob.glob(str(path / "*.csv"))]
+        if not csv_files:
+            csv_files = [Path(file) for file in glob.glob(str(path / "**" / "*.csv"), recursive=True)]
+
+    if not csv_files:
+        raise FileNotFoundError(f"No UNSW-NB15 CSV files found under {path}")
+
+    frames = []
+    for csv_file in sorted(csv_files):
+        log.info("Loading UNSW-NB15 file %s", csv_file.name)
+        frame = pd.read_csv(csv_file, low_memory=False, nrows=rows_per_file)
+        if rows_per_file:
+            log.info("Using first %s row(s) from %s", f"{len(frame):,}", csv_file.name)
+        frames.append(prepare_unsw_training_frame(frame))
+
+    df = pd.concat(frames, ignore_index=True)
+    log.info("Loaded %s UNSW-NB15 rows from %s CSV file(s)", f"{len(df):,}", len(csv_files))
+    if sample and sample < len(df):
+        df = df.sample(n=sample, random_state=RANDOM_STATE).reset_index(drop=True)
+        log.info("Sampled down to %s rows", f"{sample:,}")
+    return df
+
+
+def load_training_dataset(
+    dataset_type: str,
+    data_path: str | Path,
+    sample: int | None = None,
+    rows_per_file: int | None = DEFAULT_TRAINING_ROWS_PER_FILE,
+) -> pd.DataFrame:
+    if dataset_type == "cicids2017":
+        return prepare_training_frame(
+            load_cicids2017(data_path, sample=sample, rows_per_file=rows_per_file)
+        )
+    if dataset_type == "unsw-nb15":
+        return load_unsw_nb15(data_path, sample=sample, rows_per_file=rows_per_file)
+    if dataset_type == "both":
+        cicids = load_training_dataset("cicids2017", data_path, sample=sample, rows_per_file=rows_per_file)
+        unsw = load_training_dataset("unsw-nb15", data_path, sample=sample, rows_per_file=rows_per_file)
+        combined = pd.concat([cicids, unsw], ignore_index=True)
+        log.info("Combined CICIDS2017 + UNSW-NB15 training rows: %s", f"{len(combined):,}")
+        return combined
+    raise ValueError(f"Unsupported dataset_type {dataset_type!r}")
+
+
 def log_training_report(report: TrainingReport) -> None:
     log.info("Test accuracy: %.4f", report.accuracy)
     log.info("Weighted precision: %.4f", report.precision_weighted)
@@ -819,7 +1009,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output_dir", default="./models", help="Directory for trained artifacts")
     parser.add_argument("--test_size", type=float, default=0.2, help="Holdout fraction for evaluation")
     parser.add_argument("--cv_folds", type=int, default=0, help="Optional stratified CV folds on the training set")
+    parser.add_argument(
+        "--dataset_type",
+        choices=["cicids2017", "unsw-nb15", "both"],
+        default="cicids2017",
+        help="Training dataset loader to use",
+    )
+    parser.add_argument(
+        "--model_type",
+        choices=list(MODEL_TYPES),
+        default=DEFAULT_MODEL_TYPE,
+        help="Supervised classifier algorithm to train",
+    )
     parser.add_argument("--predict_csv", default=None, help="Classify a CSV file with a saved model instead of training")
+    parser.add_argument(
+        "--predict_model_type",
+        choices=list(MODEL_TYPES),
+        default=DEFAULT_MODEL_TYPE,
+        help="Which saved classifier bundle to use with --predict_csv",
+    )
     parser.add_argument("--limit", type=int, default=10, help="Rows to predict when using --predict_csv")
     return parser.parse_args()
 
@@ -828,16 +1036,28 @@ def main() -> None:
     args = parse_args()
 
     if args.predict_csv:
-        classifier = CyberSentinelPacketClassifier.load_model(args.output_dir)
+        classifier = CyberSentinelPacketClassifier.load_model(
+            args.output_dir,
+            model_type=args.predict_model_type,
+        )
         flows = pd.read_csv(args.predict_csv, low_memory=False).head(args.limit)
         predictions = classifier.predict(flows)
         print(predictions.to_string(index=False))
         return
 
-    log.info("CyberSentinel supervised packet classifier training")
+    log.info(
+        "CyberSentinel supervised packet classifier training (dataset=%s model=%s)",
+        args.dataset_type,
+        args.model_type,
+    )
     rows_per_file = args.rows_per_file if args.rows_per_file > 0 else None
-    df = load_cicids2017(args.data_path, sample=args.sample, rows_per_file=rows_per_file)
-    classifier = CyberSentinelPacketClassifier()
+    df = load_training_dataset(
+        args.dataset_type,
+        args.data_path,
+        sample=args.sample,
+        rows_per_file=rows_per_file,
+    )
+    classifier = CyberSentinelPacketClassifier(model_type=args.model_type)
     classifier.train(df, test_size=args.test_size, cv_folds=args.cv_folds)
     classifier.save_model(args.output_dir)
 

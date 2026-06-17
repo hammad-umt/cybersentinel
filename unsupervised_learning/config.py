@@ -27,6 +27,9 @@ class PipelineConfig:
     kmeans_max_iter: int = 300
     cluster_distance_percentile: float = 95.0
     min_distance_threshold: float = 1.5
+    clustering_algorithm: str = "kmeans"
+    dbscan_eps: float = 0.8
+    dbscan_min_samples: int = 5
 
     # General
     random_state: int = 42
@@ -111,4 +114,6 @@ class PipelineConfig:
 
     @property
     def clustering_model_path(self) -> str:
-        return str(Path(self.model_dir) / self.clustering_model_filename)
+        if self.clustering_algorithm == "kmeans":
+            return str(Path(self.model_dir) / self.clustering_model_filename)
+        return str(Path(self.model_dir) / f"clustering_model.{self.clustering_algorithm}.joblib")

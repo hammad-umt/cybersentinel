@@ -27,6 +27,12 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         help="Log format for every --log-path.",
     )
+    parser.add_argument(
+        "--clustering-algorithm",
+        choices=["kmeans", "dbscan"],
+        default="kmeans",
+        help="Clustering algorithm to train and save",
+    )
     return parser.parse_args()
 
 
@@ -73,16 +79,25 @@ def main() -> None:
     if df.empty:
         raise ValueError("No usable firewall log rows were loaded; refusing to train on empty data.")
 
-    config = PipelineConfig()
+    config = PipelineConfig(clustering_algorithm=args.clustering_algorithm)
     pipeline = UnsupervisedPipeline(config)
 
-    print(f"Training pipeline on {len(df)} real firewall log entries...")
+    print(
+        f"Training pipeline on {len(df)} real firewall log entries "
+        f"(clustering={args.clustering_algorithm})..."
+    )
     pipeline.fit(df)
 
     print("Saving models...")
     pipeline.save_pipeline()
     print(f"Saved to: {config.anomaly_model_path}")
     print(f"Saved to: {config.clustering_model_path}")
+    if args.clustering_algorithm == "kmeans":
+        legacy_path = Path(config.model_dir) / "clustering_model.joblib"
+        if Path(config.clustering_model_path) != legacy_path:
+            import shutil
+            shutil.copy2(config.clustering_model_path, legacy_path)
+            print(f"Saved legacy copy to: {legacy_path}")
     print("Done. You can now start the FastAPI server.")
 
 
