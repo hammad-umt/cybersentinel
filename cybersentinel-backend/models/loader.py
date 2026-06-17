@@ -142,7 +142,9 @@ class ModelRegistry:
 
         try:
             # Add unsupervised_learning to path so its internal imports resolve
-            _add_to_sys_path(settings.UNSUPERVISED_MODEL_DIR.parent)
+            _add_to_sys_path(
+                settings.UNSUPERVISED_MODEL_DIR.parent.parent / "unsupervised_learning"
+            )
 
             from pipeline import UnsupervisedPipeline
             from config import PipelineConfig

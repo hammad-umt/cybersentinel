@@ -8,6 +8,7 @@ Output classes: Normal, Suspicious, Malicious
 Examples:
     python model.py --data_path ./dataset --output_dir ./models
     python model.py --data_path ./dataset --sample 200000 --cv_folds 3
+    python model.py --data_path ./dataset --rows_per_file 10000
     python model.py --predict_csv ./dataset/Monday-WorkingHours.pcap_ISCX.csv
 """
 
@@ -49,6 +50,7 @@ ARTIFACT_BUNDLE = "packet_classifier_pipeline.joblib"
 MIN_PRODUCTION_FEATURE_COVERAGE = 0.65
 DEGRADED_FEATURE_COVERAGE = 0.90
 INSUFFICIENT_EVIDENCE_LABEL = "Insufficient Evidence"
+DEFAULT_TRAINING_ROWS_PER_FILE = 10_000
 
 
 LABEL_MAP = {
@@ -244,12 +246,12 @@ class CyberSentinelPacketClassifier:
         self.label_encoder = LabelEncoder()
         y_encoded = self.label_encoder.fit_transform(y)
 
-        X_train, X_test, y_train, y_test = train_test_split(
+        X_train, X_test, y_train, y_test = safe_train_test_split(
             X,
             y_encoded,
             test_size=test_size,
             random_state=self.random_state,
-            stratify=y_encoded,
+            class_names=list(self.label_encoder.classes_),
         )
 
         self.pipeline = self._build_pipeline()
@@ -386,6 +388,7 @@ class CyberSentinelPacketClassifier:
                 log.warning("ROC-AUC could not be computed: %s", exc)
 
         feature_importances = self._feature_importances()
+        labels = np.arange(len(self.label_encoder.classes_))
         report = TrainingReport(
             accuracy=float(accuracy_score(y_test, y_pred)),
             precision_weighted=float(precision_score(y_test, y_pred, average="weighted", zero_division=0)),
@@ -395,11 +398,12 @@ class CyberSentinelPacketClassifier:
             classification_report=classification_report(
                 y_test,
                 y_pred,
+                labels=labels,
                 target_names=list(self.label_encoder.classes_),
                 output_dict=True,
                 zero_division=0,
             ),
-            confusion_matrix=confusion_matrix(y_test, y_pred).tolist(),
+            confusion_matrix=confusion_matrix(y_test, y_pred, labels=labels).tolist(),
             classes=list(self.label_encoder.classes_),
             class_distribution={str(k): int(v) for k, v in original_y.value_counts().to_dict().items()},
             feature_importances=feature_importances,
@@ -650,6 +654,61 @@ def coerce_numeric_features(df: pd.DataFrame, features: list[str]) -> pd.DataFra
     return X.replace([np.inf, -np.inf], np.nan)
 
 
+def safe_train_test_split(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    test_size: float,
+    random_state: int,
+    class_names: list[str],
+) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
+    """
+    Split while handling tiny temporary training slices.
+
+    The first 10k rows per CICIDS file can leave a class with only one unique
+    row after duplicate removal. Stratified splitting cannot place a singleton
+    class in both train and test, so singleton classes stay in training and the
+    remaining rows are split normally.
+    """
+    counts = pd.Series(y).value_counts()
+    rare_classes = set(counts[counts < 2].index.tolist())
+    if not rare_classes:
+        return train_test_split(
+            X,
+            y,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=y,
+        )
+
+    rare_names = [class_names[int(idx)] for idx in sorted(rare_classes)]
+    log.warning(
+        "Keeping rare class(es) only in training because they have fewer than 2 rows: %s",
+        rare_names,
+    )
+
+    rare_mask = pd.Series(y, index=X.index).isin(rare_classes)
+    X_rare = X.loc[rare_mask]
+    y_rare = y[rare_mask.to_numpy()]
+    X_common = X.loc[~rare_mask]
+    y_common = y[(~rare_mask).to_numpy()]
+
+    common_counts = pd.Series(y_common).value_counts()
+    stratify = y_common if len(common_counts) > 1 and int(common_counts.min()) >= 2 else None
+    if stratify is None:
+        log.warning("Using an unstratified split for common classes because class counts are still too small.")
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_common,
+        y_common,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=stratify,
+    )
+    X_train = pd.concat([X_train, X_rare], axis=0)
+    y_train = np.concatenate([y_train, y_rare])
+    return X_train, X_test, y_train, y_test
+
+
 def fill_missing_with_zero(X: pd.DataFrame | np.ndarray) -> pd.DataFrame | np.ndarray:
     """Reproduce the original legacy inference behavior for old artifacts."""
     if isinstance(X, pd.DataFrame):
@@ -657,7 +716,11 @@ def fill_missing_with_zero(X: pd.DataFrame | np.ndarray) -> pd.DataFrame | np.nd
     return np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-def load_cicids2017(data_path: str | Path, sample: int | None = None) -> pd.DataFrame:
+def load_cicids2017(
+    data_path: str | Path,
+    sample: int | None = None,
+    rows_per_file: int | None = DEFAULT_TRAINING_ROWS_PER_FILE,
+) -> pd.DataFrame:
     """Load CICIDS2017 CSV files from a file or directory."""
     path = Path(data_path)
     if path.is_file():
@@ -673,7 +736,9 @@ def load_cicids2017(data_path: str | Path, sample: int | None = None) -> pd.Data
     frames = []
     for csv_file in sorted(csv_files):
         log.info("Loading %s", csv_file.name)
-        frame = pd.read_csv(csv_file, low_memory=False)
+        frame = pd.read_csv(csv_file, low_memory=False, nrows=rows_per_file)
+        if rows_per_file:
+            log.info("Using first %s row(s) from %s", f"{len(frame):,}", csv_file.name)
         frames.append(normalize_columns(frame))
 
     df = pd.concat(frames, ignore_index=True)
@@ -745,6 +810,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="CyberSentinel supervised packet classifier")
     parser.add_argument("--data_path", default="./dataset", help="CSV file or folder containing CICIDS2017 CSV files")
     parser.add_argument("--sample", type=int, default=None, help="Optional random sample size for faster training")
+    parser.add_argument(
+        "--rows_per_file",
+        type=int,
+        default=DEFAULT_TRAINING_ROWS_PER_FILE,
+        help="Read only the first N rows from each CSV file during training. Use 0 to train on full CSV files.",
+    )
     parser.add_argument("--output_dir", default="./models", help="Directory for trained artifacts")
     parser.add_argument("--test_size", type=float, default=0.2, help="Holdout fraction for evaluation")
     parser.add_argument("--cv_folds", type=int, default=0, help="Optional stratified CV folds on the training set")
@@ -764,7 +835,8 @@ def main() -> None:
         return
 
     log.info("CyberSentinel supervised packet classifier training")
-    df = load_cicids2017(args.data_path, sample=args.sample)
+    rows_per_file = args.rows_per_file if args.rows_per_file > 0 else None
+    df = load_cicids2017(args.data_path, sample=args.sample, rows_per_file=rows_per_file)
     classifier = CyberSentinelPacketClassifier()
     classifier.train(df, test_size=args.test_size, cv_folds=args.cv_folds)
     classifier.save_model(args.output_dir)

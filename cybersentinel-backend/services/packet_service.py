@@ -133,9 +133,9 @@ class PacketService:
         raw_results = classifier.predict(df)
 
         predictions: List[PacketPrediction] = []
-        for i, row in raw_results.iterrows():
+        for pos, (_, row) in enumerate(raw_results.iterrows()):
             pred = _parse_prediction(row)
-            flow = flows[i] if i < len(flows) else None
+            flow = flows[pos] if pos < len(flows) else None
             event_id = await self._save_event(pred, flow, source=source)
             pred.event_id = event_id
             predictions.append(pred)

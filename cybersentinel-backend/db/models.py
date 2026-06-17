@@ -8,6 +8,7 @@ Tables:
   - firewall_alerts   → threat signals from the unsupervised firewall pipeline
   - virus_scan_cache  → cached VirusTotal results (avoid re-hitting API)
   - ip_reputation_cache → cached AbuseIPDB + GeoIP results
+  - response_actions  → audit log for threat response actions
 
 Design decisions:
   - All primary keys are UUIDs (String) for distributed-safe IDs.
@@ -255,4 +256,48 @@ class IPReputationCache(Base):
         return (
             f"<IPReputationCache ip={self.ip_address!r} "
             f"abuse_score={self.abuse_confidence_score} country={self.country_code!r}>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Table 5 — Response Actions
+# Stores admin response actions such as block, whitelist, watchlist, and
+# firewall-rule removal. Execution is controlled by the response service so
+# the audit trail exists even when the platform runs in dry-run/demo mode.
+# ---------------------------------------------------------------------------
+
+class ResponseAction(Base):
+    __tablename__ = "response_actions"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=_new_uuid
+    )
+
+    timestamp: Mapped[str] = mapped_column(
+        String(32), default=_now_utc, index=True, nullable=False
+    )
+
+    target_ip: Mapped[str] = mapped_column(String(45), index=True, nullable=False)
+    action: Mapped[str] = mapped_column(
+        String(32), index=True, nullable=False
+    )  # block_ip | remove_firewall_rule | whitelist | watchlist | unblock_ip
+
+    status: Mapped[str] = mapped_column(
+        String(20), index=True, nullable=False
+    )  # recorded | executed | failed | dry_run
+
+    requested_by: Mapped[str | None] = mapped_column(String(128))
+    reason: Mapped[str | None] = mapped_column(Text)
+    command_preview: Mapped[str | None] = mapped_column(Text)
+    result_message: Mapped[str | None] = mapped_column(Text)
+    executed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+    __table_args__ = (
+        Index("ix_response_actions_target_timestamp", "target_ip", "timestamp"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ResponseAction id={self.id!r} target_ip={self.target_ip!r} "
+            f"action={self.action!r} status={self.status!r}>"
         )

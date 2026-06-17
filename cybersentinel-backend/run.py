@@ -1,8 +1,8 @@
 """
-Development launcher for CyberSentinel backend.
+Launcher for CyberSentinel backend.
 
-Use this instead of a raw `uvicorn --reload` command so the file watcher only
-tracks application code and ignores `.venv` / generated files.
+When DEBUG=true, reload watches only application code and ignores `.venv` /
+generated files. With DEBUG=false, reload is disabled for production-like runs.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ if __name__ == "__main__":
         "main:app",
         host=settings.HOST,
         port=settings.PORT,
-        reload=True,
+        reload=settings.DEBUG,
         reload_dirs=[
             str(BASE_DIR / "core"),
             str(BASE_DIR / "db"),

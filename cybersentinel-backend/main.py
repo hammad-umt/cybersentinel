@@ -7,21 +7,29 @@ ML model loading, CORS, routers, and health/admin endpoints.
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from collections import defaultdict, deque
 from time import monotonic
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from loguru import logger
 
 from core.config import settings
+from core.security import require_admin_api_key
 from db.database import check_database, create_tables, engine
 from models.loader import ModelRegistry
+from routers.copilot import router as copilot_router
+from routers.dashboard import router as dashboard_router
 from routers.firewall import router as firewall_router
 from routers.packet import router as packet_router
+from routers.capture import router as capture_router
+from routers.response import router as response_router
+from routers.threat import router as threat_router
+from services.packet_capture_service import set_background_event_loop
 
 
 STARTED_AT = monotonic()
@@ -30,6 +38,7 @@ STARTED_AT = monotonic()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting {name} v{version}", name=settings.APP_NAME, version=settings.APP_VERSION)
+    set_background_event_loop(asyncio.get_running_loop())
     await create_tables()
     app.state.models = await ModelRegistry.load()
     yield
@@ -82,14 +91,11 @@ async def production_safety_middleware(request: Request, call_next):
 
 app.include_router(packet_router)
 app.include_router(firewall_router)
-
-
-async def require_admin_api_key(x_admin_api_key: str | None = Header(default=None)) -> None:
-    if settings.ADMIN_API_KEY and x_admin_api_key != settings.ADMIN_API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing admin API key.",
-        )
+app.include_router(capture_router)
+app.include_router(threat_router)
+app.include_router(dashboard_router)
+app.include_router(response_router)
+app.include_router(copilot_router)
 
 
 @app.exception_handler(HTTPException)
@@ -111,8 +117,9 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 
 @app.get("/", tags=["System"])
-async def root() -> dict[str, str]:
+async def root() -> dict[str, Any]:
     return {
+        "success": True,
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "status": "running",
@@ -121,8 +128,9 @@ async def root() -> dict[str, str]:
 
 
 @app.get("/meta.json", include_in_schema=False)
-async def meta_json() -> dict[str, str]:
+async def meta_json() -> dict[str, Any]:
     return {
+        "success": True,
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,
     }
@@ -136,7 +144,11 @@ async def favicon() -> Response:
 @app.get("/health", tags=["System"])
 async def health(request: Request) -> dict[str, Any]:
     models: ModelRegistry = request.app.state.models
-    database_ok = await check_database()
+    try:
+        database_ok = await check_database()
+    except Exception as exc:
+        logger.warning("Database health check failed: {}", exc)
+        database_ok = False
     return {
         "success": True,
         "app": settings.APP_NAME,

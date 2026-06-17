@@ -11,6 +11,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.security import require_admin_api_key
 from db.database import get_db
 from models.loader import ModelNotAvailableError
 from schemas.firewall import (
@@ -20,7 +21,11 @@ from schemas.firewall import (
     FirewallIngestRequest,
     FirewallIngestResponse,
 )
+from schemas.capture import FirewallMonitorRequest, FirewallMonitorResponse
+from schemas.threat_intel import EnrichedThreatContext
 from services.firewall_service import FirewallService
+from services.packet_capture_service import PacketCaptureService
+from services.threat_intel_service import ThreatIntelService
 
 router = APIRouter(prefix="/api/v1/firewall", tags=["Firewall Analysis"])
 
@@ -35,6 +40,21 @@ def get_firewall_service(
 
 
 ServiceDep = Annotated[FirewallService, Depends(get_firewall_service)]
+
+
+def get_capture_service(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> PacketCaptureService:
+    return PacketCaptureService(registry=request.app.state.models, db=db)
+
+
+def get_threat_intel_service(db: AsyncSession = Depends(get_db)) -> ThreatIntelService:
+    return ThreatIntelService(db=db)
+
+
+CaptureServiceDep = Annotated[PacketCaptureService, Depends(get_capture_service)]
+IntelServiceDep = Annotated[ThreatIntelService, Depends(get_threat_intel_service)]
 
 
 @router.post(
@@ -122,6 +142,7 @@ async def get_alerts(
     "/alerts/{alert_id}/acknowledge",
     response_model=AckResponse,
     summary="Acknowledge one firewall alert",
+    dependencies=[Depends(require_admin_api_key)],
 )
 async def acknowledge_alert(alert_id: str, service: ServiceDep) -> AckResponse:
     try:
@@ -130,4 +151,69 @@ async def acknowledge_alert(alert_id: str, service: ServiceDep) -> AckResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except Exception as exc:
         logger.exception("Unexpected error in acknowledge_alert")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.post(
+    "/monitor/start",
+    response_model=FirewallMonitorResponse,
+    summary="Start real-time Windows firewall log monitor",
+    description=(
+        "Tails pfirewall.log and feeds every new entry into the unsupervised "
+        "anomaly detection pipeline. Alerts appear in /api/v1/firewall/alerts. "
+        "Run as Administrator to read the system firewall log."
+    ),
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def start_firewall_monitor(
+    body: FirewallMonitorRequest,
+    service: CaptureServiceDep,
+) -> FirewallMonitorResponse:
+    try:
+        return await service.start_firewall_monitor(body)
+    except ModelNotAvailableError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Error starting firewall monitor")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.post(
+    "/monitor/stop",
+    response_model=FirewallMonitorResponse,
+    summary="Stop real-time firewall log monitor",
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def stop_firewall_monitor(service: CaptureServiceDep) -> FirewallMonitorResponse:
+    try:
+        return await service.stop_firewall_monitor()
+    except Exception as exc:
+        logger.exception("Error stopping firewall monitor")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.get(
+    "/monitor/status",
+    response_model=FirewallMonitorResponse,
+    summary="Get firewall monitor status",
+    dependencies=[Depends(require_admin_api_key)],
+)
+async def get_firewall_monitor_status(service: CaptureServiceDep) -> FirewallMonitorResponse:
+    try:
+        return await service.get_firewall_monitor_status()
+    except Exception as exc:
+        logger.exception("Error fetching firewall monitor status")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.get(
+    "/intel/ip/{ip}",
+    response_model=EnrichedThreatContext,
+    summary="Get threat intelligence context for an IP",
+)
+async def get_ip_intel(ip: str, service: IntelServiceDep) -> EnrichedThreatContext:
+    try:
+        return await service.enrich(ip)
+    except Exception as exc:
+        logger.exception("Unexpected error in get_ip_intel")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))

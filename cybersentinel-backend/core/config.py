@@ -7,7 +7,7 @@ Nothing is hardcoded — API keys, paths, and thresholds all live here.
 
 Usage:
     from core.config import settings
-    print(settings.VIRUSTOTAL_API_KEY)
+    print(settings.APP_NAME)
 """
 
 from __future__ import annotations
@@ -155,6 +155,7 @@ class Settings(BaseSettings):
     ENSEMBLE_WEIGHT_ANOMALY: float = 0.35
     ENSEMBLE_WEIGHT_VIRUSTOTAL: float = 0.20
     ENSEMBLE_WEIGHT_IP_REPUTATION: float = 0.15
+    RESPONSE_ACTION_EXECUTION_ENABLED: bool = False
 
     @field_validator(
         "ENSEMBLE_WEIGHT_PACKET",
@@ -218,7 +219,7 @@ class Settings(BaseSettings):
             + self.ENSEMBLE_WEIGHT_VIRUSTOTAL
             + self.ENSEMBLE_WEIGHT_IP_REPUTATION
         )
-        if abs(weights - 1.0) > 0.001:
+        if abs(weights - 1.0) > 1e-9:
             raise ValueError("Ensemble weights must sum to 1.0")
 
         if "*" in self.CORS_ORIGINS and self.CORS_ALLOW_CREDENTIALS:
