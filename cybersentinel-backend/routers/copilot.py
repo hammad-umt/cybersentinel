@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.security import require_role
 from db.database import get_db
 from schemas.copilot import CopilotAnswerResponse, CopilotQuestionRequest
 from services.copilot_service import CopilotService
@@ -28,6 +29,7 @@ ServiceDep = Annotated[CopilotService, Depends(get_copilot_service)]
     "/ask",
     response_model=CopilotAnswerResponse,
     summary="Ask a data-grounded security investigation question",
+    dependencies=[Depends(require_role("user"))],
 )
 async def ask_copilot(
     body: CopilotQuestionRequest,

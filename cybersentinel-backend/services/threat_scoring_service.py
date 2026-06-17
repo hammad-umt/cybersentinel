@@ -57,6 +57,14 @@ class ThreatScoringService:
             + intel_score * intel_weight
         ))), 2)
 
+        classification = "Unknown"
+        block_recommended = False
+        reason = "No high-risk external intelligence signal detected."
+        if intel_score >= 70.0:
+            classification = "Known Malicious IP"
+            block_recommended = True
+            reason = "High reputation risk from external intelligence providers"
+
         evidence = {
             "source_context": src_context,
             "packet_events_used": len(packet_events),
@@ -78,6 +86,9 @@ class ThreatScoringService:
             intel_score=intel_score,
             final_score=final_score,
             severity=score_to_public_severity(final_score),
+            classification=classification,
+            block_recommended=block_recommended,
+            reason=reason,
             evidence=evidence,
             timestamp=datetime.now(timezone.utc).isoformat(),
         )

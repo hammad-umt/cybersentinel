@@ -83,14 +83,13 @@ PUBLIC_PATHS = {
 async def api_auth_middleware(request: Request, call_next):
     path = request.url.path
     if path.startswith("/api/v1"):
-        if not settings.ADMIN_API_KEY and not settings.ANALYST_API_KEY:
+        if not settings.API_KEY:
             return JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={"success": False, "detail": "API keys are not configured."},
+                content={"success": False, "detail": "API key is not configured."},
             )
         role = resolve_api_role(
-            request.headers.get("X-Admin-Api-Key"),
-            request.headers.get("X-Analyst-Api-Key"),
+            request.headers.get("X-API-Key"),
         )
         if role is None:
             client_ip = request.client.host if request.client else "unknown"
@@ -102,14 +101,7 @@ async def api_auth_middleware(request: Request, call_next):
             )
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"success": False, "detail": "Invalid or missing API key."},
-            )
-        try:
-            enforce_read_only_analyst(request, role)
-        except HTTPException as exc:
-            return JSONResponse(
-                status_code=exc.status_code,
-                content={"success": False, "detail": exc.detail},
+                content={"success": False, "detail": "Invalid or missing API key. Use header: X-API-Key: your-api-key"},
             )
         request.state.auth_role = role
     response = await call_next(request)

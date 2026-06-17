@@ -16,8 +16,7 @@ from loguru import logger
 SECRET_FIELDS = (
     "VIRUSTOTAL_API_KEY",
     "ABUSEIPDB_API_KEY",
-    "ADMIN_API_KEY",
-    "ANALYST_API_KEY",
+    "API_KEY",
 )
 
 

@@ -1021,9 +1021,24 @@ class PacketCaptureService:
                 message="Firewall monitor already running.",
             )
 
-        log_path = Path(req.log_path) if req.log_path else DEFAULT_WINDOWS_FW_LOG
-        stop_event = threading.Event()
+        log_path = Path(req.log_path).expanduser() if req.log_path else DEFAULT_WINDOWS_FW_LOG
+        if req.log_path and req.log_path.strip().lower() == "string":
+            return FirewallMonitorResponse(
+                success=False,
+                is_running=False,
+                log_path=str(log_path),
+                message=(
+                    "Invalid firewall log path. Remove the placeholder \"string\" and provide "
+                    "a real Windows firewall log path, or omit log_path to use the default path."
+                ),
+            )
 
+        if not log_path.exists() or not log_path.is_file():
+            raise ValueError(
+                f"Firewall log not found: {log_path}. Enable Windows Firewall logging and verify the path."
+            )
+
+        stop_event = threading.Event()
         _fw_monitor_state.update({
             "running": True,
             "log_path": log_path,

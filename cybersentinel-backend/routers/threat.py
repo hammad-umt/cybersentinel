@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.security import require_role
 from db.database import get_db
 from schemas.threat_score import TopThreatsResponse, UnifiedThreatScore
 from services.threat_scoring_service import ThreatScoringService
@@ -34,6 +35,7 @@ ServiceDep = Annotated[ThreatScoringService, Depends(get_threat_scoring_service)
     "/score/{ip}",
     response_model=UnifiedThreatScore,
     summary="Get unified threat score for an IP",
+    dependencies=[Depends(require_role("user"))],
 )
 async def score_ip(ip: str, service: ServiceDep) -> UnifiedThreatScore:
     try:
@@ -47,6 +49,7 @@ async def score_ip(ip: str, service: ServiceDep) -> UnifiedThreatScore:
     "/top",
     response_model=TopThreatsResponse,
     summary="Get top IPs by unified threat score",
+    dependencies=[Depends(require_role("user"))],
 )
 async def top_threats(
     service: ServiceDep,

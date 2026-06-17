@@ -23,6 +23,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.security import require_role
 from db.database import get_db
 from models.loader import ModelNotAvailableError
 from schemas.packet import (
@@ -62,6 +63,7 @@ ServiceDep = Annotated[PacketService, Depends(get_packet_service)]
         "Send one network flow's features and receive a Normal / Suspicious / "
         "Malicious label with confidence scores and a threat score contribution."
     ),
+    dependencies=[Depends(require_role("user"))],
 )
 async def classify_single(
     body: PacketClassifyRequest,
@@ -85,6 +87,7 @@ async def classify_single(
         "Column names can be CICIDS2017-style or live-flow aliases. "
         "Returns per-flow predictions and summary counts for the dashboard."
     ),
+    dependencies=[Depends(require_role("user"))],
 )
 async def classify_batch_csv(
     service: ServiceDep,
@@ -153,6 +156,7 @@ async def classify_batch_csv(
     response_model=PacketEventsResponse,
     summary="Get paginated packet classification history",
     description="Returns all stored packet events. Filter by prediction label.",
+    dependencies=[Depends(require_role("user"))],
 )
 async def get_events(
     service: ServiceDep,
@@ -178,6 +182,7 @@ async def get_events(
     "/events.csv",
     summary="Export packet classification history as CSV",
     response_class=StreamingResponse,
+    dependencies=[Depends(require_role("user"))],
 )
 async def export_events_csv(
     service: ServiceDep,

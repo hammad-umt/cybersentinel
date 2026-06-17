@@ -13,6 +13,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.security import require_role
 from db.database import get_db
 from schemas.threat_intel import URLScanRequest, VTResult
 from services.threat_intel_service import ThreatIntelService
@@ -31,6 +32,7 @@ IntelServiceDep = Annotated[ThreatIntelService, Depends(get_threat_intel_service
     "/file",
     response_model=VTResult,
     summary="Scan an uploaded file with VirusTotal",
+    dependencies=[Depends(require_role("user"))],
 )
 async def scan_file(
     service: IntelServiceDep,
@@ -56,6 +58,7 @@ async def scan_file(
 @router.post(
     "/url",
     response_model=VTResult,
+    dependencies=[Depends(require_role("user"))],
     summary="Scan a URL with VirusTotal",
 )
 async def scan_url(body: URLScanRequest, service: IntelServiceDep) -> VTResult:

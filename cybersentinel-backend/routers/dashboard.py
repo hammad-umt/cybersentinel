@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.security import require_role
 from db.database import get_db
 from schemas.dashboard import DashboardSummary
 from services.dashboard_service import DashboardService
@@ -28,6 +29,7 @@ ServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)]
     "/summary",
     response_model=DashboardSummary,
     summary="Get SOC dashboard summary",
+    dependencies=[Depends(require_role("user"))],
 )
 async def dashboard_summary(service: ServiceDep) -> DashboardSummary:
     try:

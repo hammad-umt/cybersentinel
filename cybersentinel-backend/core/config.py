@@ -51,8 +51,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "CyberSentinel"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
-    ADMIN_API_KEY: str = ""
-    ANALYST_API_KEY: str = ""
+    API_KEY: str = ""
 
     @field_validator("DEBUG", mode="before")
     @classmethod

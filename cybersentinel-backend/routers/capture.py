@@ -46,6 +46,7 @@ ServiceDep = Annotated[PacketCaptureService, Depends(get_capture_service)]
     "/interfaces",
     response_model=InterfacesResponse,
     summary="List available network interfaces for capture",
+    dependencies=[Depends(require_role("user"))],
 )
 async def list_interfaces(service: ServiceDep) -> InterfacesResponse:
     try:
@@ -76,7 +77,7 @@ async def list_interfaces(service: ServiceDep) -> InterfacesResponse:
         "(requires Npcap on Windows) or TShark (requires Wireshark). "
         "Run the backend as Administrator for raw socket access."
     ),
-    dependencies=[Depends(require_role("admin"))],
+    dependencies=[Depends(require_role("user"))],
 )
 async def start_capture(
     body: CaptureStartRequest,
@@ -104,7 +105,7 @@ async def start_capture(
     "/stop",
     response_model=CaptureStatusResponse,
     summary="Stop live packet capture",
-    dependencies=[Depends(require_role("admin"))],
+    dependencies=[Depends(require_role("user"))],
 )
 async def stop_capture(service: ServiceDep) -> CaptureStatusResponse:
     try:
@@ -121,6 +122,7 @@ async def stop_capture(service: ServiceDep) -> CaptureStatusResponse:
     "/status",
     response_model=CaptureStatusResponse,
     summary="Get current capture status and packet counts",
+    dependencies=[Depends(require_role("user"))],
 )
 async def get_capture_status(service: ServiceDep) -> CaptureStatusResponse:
     try:
@@ -138,6 +140,7 @@ async def get_capture_status(service: ServiceDep) -> CaptureStatusResponse:
     response_model=CapturedPacketsResponse,
     summary="Get all captured and classified packets",
     description="Returns all packets captured in the current session with ML predictions.",
+    dependencies=[Depends(require_role("user"))],
 )
 async def get_packets(service: ServiceDep) -> CapturedPacketsResponse:
     try:

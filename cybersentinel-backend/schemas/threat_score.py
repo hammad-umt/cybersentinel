@@ -23,6 +23,9 @@ class UnifiedThreatScore(BaseModel):
     intel_score: float = Field(ge=0.0, le=100.0)
     final_score: float = Field(ge=0.0, le=100.0)
     severity: str = Field(description="Low | Medium | High | Critical")
+    classification: str = Field(description="Primary classification label for the IP")
+    block_recommended: bool = Field(description="Whether the IP should be blocked")
+    reason: str = Field(description="Decision rationale for the classification")
     evidence: Dict[str, Any] = Field(default_factory=dict)
     timestamp: str
 

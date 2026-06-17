@@ -9,18 +9,15 @@ from loguru import logger
 
 from core.config import settings
 
-Role = Literal["admin", "analyst"]
+Role = Literal["user"]
 READ_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
 def resolve_api_role(
-    x_admin_api_key: str | None,
-    x_analyst_api_key: str | None,
+    x_api_key: str | None,
 ) -> Role | None:
-    if settings.ADMIN_API_KEY and x_admin_api_key == settings.ADMIN_API_KEY:
-        return "admin"
-    if settings.ANALYST_API_KEY and x_analyst_api_key == settings.ANALYST_API_KEY:
-        return "analyst"
+    if settings.API_KEY and x_api_key == settings.API_KEY:
+        return "user"
     return None
 
 
@@ -31,16 +28,15 @@ def _client_ip(request: Request) -> str:
 def require_role(min_role: Role):
     async def _dependency(
         request: Request,
-        x_admin_api_key: str | None = Header(default=None, alias="X-Admin-Api-Key"),
-        x_analyst_api_key: str | None = Header(default=None, alias="X-Analyst-Api-Key"),
+        x_api_key: str | None = Header(default=None, alias="X-API-Key"),
     ) -> Role:
-        if not settings.ADMIN_API_KEY and not settings.ANALYST_API_KEY:
+        if not settings.API_KEY:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="API keys are not configured.",
+                detail="API key is not configured.",
             )
 
-        role = resolve_api_role(x_admin_api_key, x_analyst_api_key)
+        role = resolve_api_role(x_api_key)
         if role is None:
             logger.warning(
                 "Unauthorized API access from {ip} {method} {path}",
@@ -50,16 +46,9 @@ def require_role(min_role: Role):
             )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or missing API key.",
+                detail="Invalid or missing API key. Use header: X-API-Key: your-api-key",
             )
 
-        if min_role == "admin" and role != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admin role required.",
-            )
-
-        enforce_read_only_analyst(request, role)
         request.state.auth_role = role
         return role
 
@@ -68,17 +57,13 @@ def require_role(min_role: Role):
 
 async def require_admin_api_key(
     request: Request,
-    x_admin_api_key: str | None = Header(default=None, alias="X-Admin-Api-Key"),
-    x_analyst_api_key: str | None = Header(default=None, alias="X-Analyst-Api-Key"),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> None:
-    """Backward-compatible admin guard."""
-    dependency = require_role("admin")
-    await dependency(request, x_admin_api_key, x_analyst_api_key)
+    """API key guard."""
+    dependency = require_role("user")
+    await dependency(request, x_api_key)
 
 
 def enforce_read_only_analyst(request: Request, role: Role) -> None:
-    if role == "analyst" and request.method not in READ_METHODS:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Analyst API keys are read-only.",
-        )
+    """No longer needed with single API key."""
+    pass

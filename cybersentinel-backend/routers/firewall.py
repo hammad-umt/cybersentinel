@@ -65,6 +65,7 @@ IntelServiceDep = Annotated[ThreatIntelService, Depends(get_threat_intel_service
     "/analyze",
     response_model=FirewallAnalyzeResponse,
     summary="Analyze an uploaded firewall log",
+    dependencies=[Depends(require_role("user"))],
 )
 async def analyze_firewall_log(
     service: ServiceDep,
@@ -113,6 +114,7 @@ async def analyze_firewall_log(
     "/ingest",
     response_model=FirewallIngestResponse,
     summary="Ingest one realtime firewall event",
+    dependencies=[Depends(require_role("user"))],
 )
 async def ingest_firewall_event(
     body: FirewallIngestRequest,
@@ -131,6 +133,7 @@ async def ingest_firewall_event(
     "/alerts",
     response_model=FirewallAlertsResponse,
     summary="Get paginated firewall alerts",
+    dependencies=[Depends(require_role("user"))],
 )
 async def get_alerts(
     service: ServiceDep,
@@ -154,6 +157,7 @@ async def get_alerts(
 @router.get(
     "/alerts.csv",
     summary="Export firewall alerts as CSV",
+    dependencies=[Depends(require_role("analyst"))],
     response_class=StreamingResponse,
 )
 async def export_alerts_csv(
@@ -216,7 +220,7 @@ def _firewall_alerts_to_csv(rows) -> str:
     "/alerts/{alert_id}/acknowledge",
     response_model=AckResponse,
     summary="Acknowledge one firewall alert",
-    dependencies=[Depends(require_role("admin"))],
+    dependencies=[Depends(require_role("user"))],
 )
 async def acknowledge_alert(alert_id: str, service: ServiceDep) -> AckResponse:
     try:
@@ -237,7 +241,7 @@ async def acknowledge_alert(alert_id: str, service: ServiceDep) -> AckResponse:
         "anomaly detection pipeline. Alerts appear in /api/v1/firewall/alerts. "
         "Run as Administrator to read the system firewall log."
     ),
-    dependencies=[Depends(require_role("admin"))],
+    dependencies=[Depends(require_role("user"))],
 )
 async def start_firewall_monitor(
     body: FirewallMonitorRequest,
@@ -247,6 +251,8 @@ async def start_firewall_monitor(
         return await service.start_firewall_monitor(body)
     except ModelNotAvailableError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except Exception as exc:
         logger.exception("Error starting firewall monitor")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
@@ -256,7 +262,7 @@ async def start_firewall_monitor(
     "/monitor/stop",
     response_model=FirewallMonitorResponse,
     summary="Stop real-time firewall log monitor",
-    dependencies=[Depends(require_role("admin"))],
+    dependencies=[Depends(require_role("user"))],
 )
 async def stop_firewall_monitor(service: CaptureServiceDep) -> FirewallMonitorResponse:
     try:
@@ -270,7 +276,7 @@ async def stop_firewall_monitor(service: CaptureServiceDep) -> FirewallMonitorRe
     "/monitor/status",
     response_model=FirewallMonitorResponse,
     summary="Get firewall monitor status",
-    dependencies=[Depends(require_role("admin"))],
+    dependencies=[Depends(require_role("user"))],
 )
 async def get_firewall_monitor_status(service: CaptureServiceDep) -> FirewallMonitorResponse:
     try:
@@ -283,6 +289,7 @@ async def get_firewall_monitor_status(service: CaptureServiceDep) -> FirewallMon
 @router.get(
     "/intel/ip/{ip}",
     response_model=EnrichedThreatContext,
+    dependencies=[Depends(require_role("analyst"))],
     summary="Get threat intelligence context for an IP",
 )
 async def get_ip_intel(ip: str, service: IntelServiceDep) -> EnrichedThreatContext:

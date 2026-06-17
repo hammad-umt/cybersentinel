@@ -20,7 +20,7 @@ from services.report_service import ReportService
 router = APIRouter(
     prefix="/api/v1/reports",
     tags=["Reports"],
-    dependencies=[Depends(require_role("admin"))],
+    dependencies=[Depends(require_role("user"))],
 )
 
 

@@ -33,7 +33,7 @@ ServiceDep = Annotated[ResponseService, Depends(get_response_service)]
     "/actions",
     response_model=ResponseActionResponse,
     summary="Record or execute a threat response action",
-    dependencies=[Depends(require_role("admin"))],
+    dependencies=[Depends(require_role("user"))],
 )
 async def create_response_action(
     body: ResponseActionRequest,
@@ -50,6 +50,7 @@ async def create_response_action(
     "/actions",
     response_model=ResponseActionsResponse,
     summary="Get response action audit log",
+    dependencies=[Depends(require_role("user"))],
 )
 async def list_response_actions(
     service: ServiceDep,
