@@ -15,11 +15,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.security import require_admin_api_key
+from core.config import settings
+from core.security import require_role
 from db.database import get_db
 from schemas.capture import CapturedPacketsResponse, CaptureStartRequest, CaptureStatusResponse, InterfacesResponse
 from services.packet_capture_service import PacketCaptureService
@@ -75,7 +76,7 @@ async def list_interfaces(service: ServiceDep) -> InterfacesResponse:
         "(requires Npcap on Windows) or TShark (requires Wireshark). "
         "Run the backend as Administrator for raw socket access."
     ),
-    dependencies=[Depends(require_admin_api_key)],
+    dependencies=[Depends(require_role("admin"))],
 )
 async def start_capture(
     body: CaptureStartRequest,
@@ -103,7 +104,7 @@ async def start_capture(
     "/stop",
     response_model=CaptureStatusResponse,
     summary="Stop live packet capture",
-    dependencies=[Depends(require_admin_api_key)],
+    dependencies=[Depends(require_role("admin"))],
 )
 async def stop_capture(service: ServiceDep) -> CaptureStatusResponse:
     try:
@@ -137,7 +138,6 @@ async def get_capture_status(service: ServiceDep) -> CaptureStatusResponse:
     response_model=CapturedPacketsResponse,
     summary="Get all captured and classified packets",
     description="Returns all packets captured in the current session with ML predictions.",
-    dependencies=[Depends(require_admin_api_key)],
 )
 async def get_packets(service: ServiceDep) -> CapturedPacketsResponse:
     try:
@@ -148,4 +148,35 @@ async def get_packets(service: ServiceDep) -> CapturedPacketsResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
         )
+
+
+@router.post(
+    "/import",
+    response_model=CaptureStatusResponse,
+    summary="Import an offline PCAP file for packet classification",
+    dependencies=[Depends(require_role("admin"))],
+)
+async def import_pcap_file(
+    service: ServiceDep,
+    file: UploadFile = File(..., description="Offline .pcap capture file"),
+    model_type: str | None = Query(default=None, description="random_forest | decision_tree | svm"),
+) -> CaptureStatusResponse:
+    filename = (file.filename or "").lower()
+    if not filename.endswith(".pcap"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .pcap files are supported.")
+    try:
+        contents = await file.read()
+        if not contents:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded PCAP is empty.")
+        if len(contents) > settings.max_upload_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File exceeds {settings.MAX_UPLOAD_SIZE_MB} MB upload limit.",
+            )
+        return await service.import_pcap(contents, model_type=model_type)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error importing PCAP file")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 

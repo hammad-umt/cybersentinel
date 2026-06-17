@@ -3,20 +3,6 @@ models/loader.py
 
 Loads all CyberSentinel ML models once at application startup and stores
 them in a ModelRegistry object that lives in app.state.
-
-Why a registry pattern?
-  - Models are expensive to load (100ms–2s each). Loading per-request would
-    make every endpoint slow and waste memory.
-  - app.state survives the full lifetime of the FastAPI process.
-  - Every service just does: request.app.state.models.packet_classifier
-
-Usage in main.py lifespan:
-    from models.loader import ModelRegistry
-    app.state.models = await ModelRegistry.load()
-
-Usage in a service:
-    registry: ModelRegistry = request.app.state.models
-    result = registry.packet_classifier.predict(df)
 """
 
 from __future__ import annotations
@@ -30,159 +16,165 @@ from loguru import logger
 from core.config import settings
 
 
-# ---------------------------------------------------------------------------
-# We import the ML classes lazily inside load() so that if a model file is
-# missing the app still starts — it just marks that model as unavailable.
-# ---------------------------------------------------------------------------
+DEFAULT_PACKET_MODEL_TYPE = "random_forest"
+PACKET_MODEL_TYPES = ("random_forest", "decision_tree", "svm")
+DEFAULT_CLUSTERING_ALGORITHM = "kmeans"
+CLUSTERING_ALGORITHMS = ("kmeans", "dbscan")
 
 
 @dataclass
 class ModelRegistry:
-    """
-    Holds references to every loaded ML model.
-    Attributes are None if the model file was missing or failed to load.
-    Check .packet_classifier_available and .firewall_pipeline_available
-    before using them in services.
-    """
+    """Holds references to every loaded ML model."""
 
-    # Supervised — CyberSentinelPacketClassifier instance
+    packet_classifiers: dict[str, object] = field(default_factory=dict, repr=False)
     packet_classifier: object | None = field(default=None, repr=False)
-
-    # Unsupervised — UnsupervisedPipeline instance
+    firewall_pipelines: dict[str, object] = field(default_factory=dict, repr=False)
     firewall_pipeline: object | None = field(default=None, repr=False)
 
-    # Load status — checked by health endpoint and services
     packet_classifier_available: bool = False
     firewall_pipeline_available: bool = False
 
-    # Metadata shown on /health endpoint
     packet_classifier_meta: dict = field(default_factory=dict)
     firewall_pipeline_meta: dict = field(default_factory=dict)
 
     @classmethod
     async def load(cls) -> "ModelRegistry":
-        """
-        Loads all models from disk.
-        Called once in main.py lifespan on startup.
-        Never raises — logs errors and marks models as unavailable instead,
-        so the app can still serve endpoints that don't need that model.
-        """
         registry = cls()
-        await registry._load_packet_classifier()
-        await registry._load_firewall_pipeline()
+        await registry._load_packet_classifiers()
+        await registry._load_firewall_pipelines()
         registry._log_summary()
         return registry
 
-    # ------------------------------------------------------------------
-    # Private loaders
-    # ------------------------------------------------------------------
-
-    async def _load_packet_classifier(self) -> None:
-        """Load the supervised RandomForest packet classifier bundle."""
-        bundle_path = settings.supervised_bundle_path
-
+    async def _load_packet_classifiers(self) -> None:
+        model_dir = settings.SUPERVISED_MODEL_DIR
         legacy_files = [
-            bundle_path.parent / "packet_classifier.pkl",
-            bundle_path.parent / "packet_scaler.pkl",
-            bundle_path.parent / "packet_label_encoder.pkl",
-            bundle_path.parent / "packet_features.pkl",
+            model_dir / "packet_classifier.pkl",
+            model_dir / "packet_scaler.pkl",
+            model_dir / "packet_label_encoder.pkl",
+            model_dir / "packet_features.pkl",
         ]
-        if not bundle_path.exists() and not all(path.exists() for path in legacy_files):
+        typed_exists = any(
+            settings.supervised_bundle_path_for(model_type).exists()
+            for model_type in PACKET_MODEL_TYPES
+        )
+        legacy_bundle = settings.supervised_bundle_path
+        if not typed_exists and not legacy_bundle.exists() and not all(path.exists() for path in legacy_files):
             logger.warning(
                 "Supervised model files not found in {path}. "
-                "Run supervised_learning/model.py to train it first. "
-                "POST /api/v1/packet/classify will return 503 until the model is loaded.",
-                path=bundle_path.parent,
+                "Run supervised_learning/model.py to train them first.",
+                path=model_dir,
             )
             return
 
         try:
-            # Add supervised_learning to path so its internal imports resolve
             _add_to_sys_path(settings.SUPERVISED_MODEL_DIR.parent.parent)
-
             from supervised_learning.model import CyberSentinelPacketClassifier
 
-            logger.info("Loading supervised packet classifier from {path}...", path=bundle_path)
-            self.packet_classifier = CyberSentinelPacketClassifier.load_model(
-                settings.SUPERVISED_MODEL_DIR
+            for model_type in PACKET_MODEL_TYPES:
+                bundle_path = settings.supervised_bundle_path_for(model_type)
+                if not bundle_path.exists() and not (
+                    model_type == DEFAULT_PACKET_MODEL_TYPE and legacy_bundle.exists()
+                ):
+                    continue
+                logger.info("Loading supervised packet classifier ({type})...", type=model_type)
+                classifier = CyberSentinelPacketClassifier.load_model(model_dir, model_type=model_type)
+                self.packet_classifiers[model_type] = classifier
+
+            if not self.packet_classifiers:
+                raise FileNotFoundError("No supervised classifier bundles could be loaded.")
+
+            self.packet_classifier = self.packet_classifiers.get(
+                DEFAULT_PACKET_MODEL_TYPE,
+                next(iter(self.packet_classifiers.values())),
             )
             self.packet_classifier_available = True
-
-            # Pull metadata from the training report if available
-            report = getattr(self.packet_classifier, "training_report", None)
-            if report:
-                self.packet_classifier_meta = {
-                    "accuracy": getattr(report, "accuracy", None),
-                    "f1_weighted": getattr(report, "f1_weighted", None),
-                    "classes": getattr(report, "classes", []),
-                }
-            logger.success("Supervised packet classifier loaded successfully.")
-
-        except Exception as exc:
-            logger.error(
-                "Failed to load supervised packet classifier: {error}", error=exc
+            self.packet_classifier_meta = {
+                "available_model_types": sorted(self.packet_classifiers.keys()),
+                "default_model_type": DEFAULT_PACKET_MODEL_TYPE,
+            }
+            default_report = getattr(self.packet_classifier, "training_report", None)
+            if default_report:
+                self.packet_classifier_meta.update(
+                    {
+                        "accuracy": getattr(default_report, "accuracy", None),
+                        "f1_weighted": getattr(default_report, "f1_weighted", None),
+                        "classes": getattr(default_report, "classes", []),
+                    }
+                )
+            logger.success(
+                "Supervised packet classifiers loaded: {types}",
+                types=", ".join(sorted(self.packet_classifiers.keys())),
             )
+        except Exception as exc:
+            logger.error("Failed to load supervised packet classifiers: {error}", error=exc)
+            self.packet_classifiers = {}
             self.packet_classifier = None
             self.packet_classifier_available = False
 
-    async def _load_firewall_pipeline(self) -> None:
-        """Load the unsupervised Isolation Forest + KMeans firewall pipeline."""
+    async def _load_firewall_pipelines(self) -> None:
         anomaly_path = settings.anomaly_model_path
-        clustering_path = settings.clustering_model_path
-
-        missing = [p for p in [anomaly_path, clustering_path] if not p.exists()]
-        if missing:
+        if not anomaly_path.exists():
             logger.warning(
-                "Unsupervised model files not found: {paths}. "
-                "Run unsupervised_learning/train.py first. "
-                "POST /api/v1/firewall/analyze will return 503 until models are loaded.",
-                paths=[str(p) for p in missing],
+                "Unsupervised anomaly model not found: {path}. "
+                "Run unsupervised_learning/train.py first.",
+                path=anomaly_path,
             )
             return
 
         try:
-            # Add unsupervised_learning to path so its internal imports resolve
-            _add_to_sys_path(
-                settings.UNSUPERVISED_MODEL_DIR.parent.parent / "unsupervised_learning"
-            )
-
+            _add_to_sys_path(settings.UNSUPERVISED_MODEL_DIR.parent.parent / "unsupervised_learning")
             from pipeline import UnsupervisedPipeline
             from config import PipelineConfig
 
-            config = PipelineConfig(
-                model_dir=str(settings.UNSUPERVISED_MODEL_DIR),
-                anomaly_model_filename=anomaly_path.name,
-                clustering_model_filename=clustering_path.name,
-            )
+            for algorithm in CLUSTERING_ALGORITHMS:
+                clustering_path = settings.clustering_model_path_for(algorithm)
+                legacy_cluster = settings.clustering_model_path
+                if not clustering_path.exists():
+                    if algorithm == DEFAULT_CLUSTERING_ALGORITHM and legacy_cluster.exists():
+                        clustering_path = legacy_cluster
+                    else:
+                        continue
 
-            logger.info(
-                "Loading unsupervised firewall pipeline from {dir}...",
-                dir=settings.UNSUPERVISED_MODEL_DIR,
-            )
-            pipeline = UnsupervisedPipeline(config)
-            pipeline.load_pipeline()
+                config = PipelineConfig(
+                    model_dir=str(settings.UNSUPERVISED_MODEL_DIR),
+                    anomaly_model_filename=anomaly_path.name,
+                    clustering_model_filename=clustering_path.name,
+                    clustering_algorithm=algorithm,
+                )
+                logger.info(
+                    "Loading unsupervised firewall pipeline (clustering={algorithm})...",
+                    algorithm=algorithm,
+                )
+                pipeline = UnsupervisedPipeline(config)
+                pipeline.load_pipeline(clustering_path=str(clustering_path))
+                self.firewall_pipelines[algorithm] = pipeline
 
-            self.firewall_pipeline = pipeline
+            if not self.firewall_pipelines:
+                raise FileNotFoundError("No clustering model artifacts could be loaded.")
+
+            self.firewall_pipeline = self.firewall_pipelines.get(
+                DEFAULT_CLUSTERING_ALGORITHM,
+                next(iter(self.firewall_pipelines.values())),
+            )
             self.firewall_pipeline_available = True
-
-            # Pull metadata from anomaly model
-            anomaly_meta = getattr(pipeline.anomaly_model, "metadata", {})
-            cluster_meta = getattr(pipeline.cluster_model, "metadata", {})
+            default_pipeline = self.firewall_pipeline
             self.firewall_pipeline_meta = {
-                "anomaly_model": anomaly_meta,
-                "clustering_model": cluster_meta,
+                "available_clustering_algorithms": sorted(self.firewall_pipelines.keys()),
+                "default_clustering_algorithm": DEFAULT_CLUSTERING_ALGORITHM,
+                "anomaly_model": getattr(default_pipeline.anomaly_model, "metadata", {}),
+                "clustering_model": getattr(default_pipeline.cluster_model, "metadata", {}),
             }
-            logger.success("Unsupervised firewall pipeline loaded successfully.")
-
-        except Exception as exc:
-            logger.error(
-                "Failed to load unsupervised firewall pipeline: {error}", error=exc
+            logger.success(
+                "Unsupervised firewall pipelines loaded: {algorithms}",
+                algorithms=", ".join(sorted(self.firewall_pipelines.keys())),
             )
+        except Exception as exc:
+            logger.error("Failed to load unsupervised firewall pipeline: {error}", error=exc)
+            self.firewall_pipelines = {}
             self.firewall_pipeline = None
             self.firewall_pipeline_available = False
 
     def _log_summary(self) -> None:
-        """Log a clean startup summary of what loaded and what didn't."""
         logger.info("=" * 55)
         logger.info("CyberSentinel ML Model Registry — startup summary")
         logger.info("=" * 55)
@@ -190,64 +182,52 @@ class ModelRegistry:
         _status(self.firewall_pipeline_available, "Unsupervised firewall pipeline")
         logger.info("=" * 55)
 
-    # ------------------------------------------------------------------
-    # Runtime reload — called by POST /api/v1/admin/reload-models
-    # Useful after retraining without restarting the server.
-    # ------------------------------------------------------------------
-
     async def reload(self) -> None:
-        """Reload all models from disk without restarting the server."""
         logger.info("Reloading all ML models from disk...")
+        self.packet_classifiers = {}
         self.packet_classifier = None
         self.packet_classifier_available = False
+        self.firewall_pipelines = {}
         self.firewall_pipeline = None
         self.firewall_pipeline_available = False
-        await self._load_packet_classifier()
-        await self._load_firewall_pipeline()
+        await self._load_packet_classifiers()
+        await self._load_firewall_pipelines()
         self._log_summary()
 
-    # ------------------------------------------------------------------
-    # Guard helpers — used by services to fail fast with a clear message
-    # ------------------------------------------------------------------
+    def require_packet_classifier(self, model_type: str | None = None) -> object:
+        requested = model_type or DEFAULT_PACKET_MODEL_TYPE
+        if requested in self.packet_classifiers:
+            return self.packet_classifiers[requested]
+        if DEFAULT_PACKET_MODEL_TYPE in self.packet_classifiers:
+            return self.packet_classifiers[DEFAULT_PACKET_MODEL_TYPE]
+        if self.packet_classifiers:
+            return next(iter(self.packet_classifiers.values()))
+        raise ModelNotAvailableError(
+            "Supervised packet classifier is not loaded. "
+            "Train the model first by running supervised_learning/model.py "
+            "then restart the server."
+        )
 
-    def require_packet_classifier(self) -> object:
-        """
-        Returns the packet classifier or raises RuntimeError.
-        Services call this instead of checking the flag themselves.
-        """
-        if not self.packet_classifier_available or self.packet_classifier is None:
-            raise ModelNotAvailableError(
-                "Supervised packet classifier is not loaded. "
-                "Train the model first by running supervised_learning/model.py "
-                "then restart the server."
-            )
-        return self.packet_classifier
+    def require_firewall_pipeline(self, clustering_algorithm: str | None = None) -> object:
+        requested = clustering_algorithm or DEFAULT_CLUSTERING_ALGORITHM
+        if requested in self.firewall_pipelines:
+            return self.firewall_pipelines[requested]
+        if DEFAULT_CLUSTERING_ALGORITHM in self.firewall_pipelines:
+            return self.firewall_pipelines[DEFAULT_CLUSTERING_ALGORITHM]
+        if self.firewall_pipelines:
+            return next(iter(self.firewall_pipelines.values()))
+        raise ModelNotAvailableError(
+            "Unsupervised firewall pipeline is not loaded. "
+            "Train the model first by running unsupervised_learning/train.py "
+            "then restart the server."
+        )
 
-    def require_firewall_pipeline(self) -> object:
-        """Returns the firewall pipeline or raises RuntimeError."""
-        if not self.firewall_pipeline_available or self.firewall_pipeline is None:
-            raise ModelNotAvailableError(
-                "Unsupervised firewall pipeline is not loaded. "
-                "Train the model first by running unsupervised_learning/train.py "
-                "then restart the server."
-            )
-        return self.firewall_pipeline
-
-
-# ---------------------------------------------------------------------------
-# Custom exception — caught by routers and converted to HTTP 503
-# ---------------------------------------------------------------------------
 
 class ModelNotAvailableError(RuntimeError):
     """Raised when a required ML model has not been loaded."""
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _add_to_sys_path(path: Path) -> None:
-    """Add a directory to sys.path if it isn't already there."""
     str_path = str(path.resolve())
     if str_path not in sys.path:
         sys.path.insert(0, str_path)

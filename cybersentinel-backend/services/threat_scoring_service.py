@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.severity import score_to_public_severity
 from db.models import FirewallAlert, PacketEvent
 from schemas.threat_score import TopThreatsResponse, UnifiedThreatScore
 from services.threat_intel_service import ThreatIntelService
@@ -76,7 +77,7 @@ class ThreatScoringService:
             anomaly_score=anomaly_score,
             intel_score=intel_score,
             final_score=final_score,
-            severity=_severity(final_score),
+            severity=score_to_public_severity(final_score),
             evidence=evidence,
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
@@ -101,12 +102,3 @@ class ThreatScoringService:
             results=scores[:limit],
         )
 
-
-def _severity(score: float) -> str:
-    if score >= 80:
-        return "Critical"
-    if score >= 60:
-        return "Malicious"
-    if score >= 35:
-        return "Suspicious"
-    return "Normal"

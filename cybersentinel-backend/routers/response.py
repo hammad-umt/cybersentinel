@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.security import require_admin_api_key
+from core.security import require_role
 from db.database import get_db
 from schemas.response import (
     ResponseActionRequest,
@@ -33,7 +33,7 @@ ServiceDep = Annotated[ResponseService, Depends(get_response_service)]
     "/actions",
     response_model=ResponseActionResponse,
     summary="Record or execute a threat response action",
-    dependencies=[Depends(require_admin_api_key)],
+    dependencies=[Depends(require_role("admin"))],
 )
 async def create_response_action(
     body: ResponseActionRequest,
@@ -50,7 +50,6 @@ async def create_response_action(
     "/actions",
     response_model=ResponseActionsResponse,
     summary="Get response action audit log",
-    dependencies=[Depends(require_admin_api_key)],
 )
 async def list_response_actions(
     service: ServiceDep,

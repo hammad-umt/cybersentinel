@@ -8,9 +8,12 @@ caching so scoring endpoints can enrich IPs without repeatedly calling vendors.
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
+import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 
 import httpx
 from loguru import logger
@@ -24,6 +27,11 @@ from schemas.threat_intel import EnrichedThreatContext, IPIntelResult, VTResult
 
 CACHE_TTL = timedelta(hours=24)
 HTTP_TIMEOUT_SECONDS = 10.0
+MAX_HTTP_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = (0.5, 1.0, 2.0)
+VT_BASE_URL = "https://www.virustotal.com/api/v3"
+URL_POLL_ATTEMPTS = 12
+URL_POLL_INTERVAL_SECONDS = 2.0
 
 
 class ThreatIntelService:
@@ -46,15 +54,17 @@ class ThreatIntelService:
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
             if settings.abuseipdb_configured:
                 try:
-                    response = await client.get(
+                    response = await _request_with_retry(
+                        client,
+                        "GET",
                         "https://api.abuseipdb.com/api/v2/check",
+                        provider="AbuseIPDB",
                         headers={
                             "Key": settings.ABUSEIPDB_API_KEY,
                             "Accept": "application/json",
                         },
                         params={"ipAddress": ip, "maxAgeInDays": 90, "verbose": ""},
                     )
-                    response.raise_for_status()
                     abuse_payload = response.json()
                     abuse_data = abuse_payload.get("data", {})
                     raw["abuseipdb"] = abuse_payload
@@ -67,8 +77,13 @@ class ThreatIntelService:
 
             try:
                 geo_url = f"{settings.GEOIP_BASE_URL.rstrip('/')}/{ip}"
-                response = await client.get(geo_url)
-                response.raise_for_status()
+                response = await _request_with_retry(
+                    client,
+                    "GET",
+                    geo_url,
+                    provider="GeoIP",
+                    params={"fields": "status,message,country,countryCode,city,lat,lon,isp,as,query"},
+                )
                 geo_data = response.json()
                 raw["geoip"] = geo_data
                 provider_status["geoip"] = "ok" if geo_data.get("status") != "fail" else "unavailable"
@@ -86,13 +101,15 @@ class ThreatIntelService:
 
     async def check_virustotal(self, ip: str) -> VTResult:
         """Query VirusTotal's IP report endpoint, using a 24-hour cache."""
-        cached = await self._get_fresh_vt_cache(ip)
+        cached = await self._get_fresh_vt_cache(ip, "ip")
         if cached is not None:
             return self._vt_result_from_cache(cached, cached=True, provider_status="ok")
 
         now = _now_utc()
         if not settings.virustotal_configured:
             return VTResult(
+                lookup_key=ip,
+                scan_type="ip",
                 ip=ip,
                 provider_status="skipped_missing_api_key",
                 scanned_at=now,
@@ -100,43 +117,148 @@ class ThreatIntelService:
 
         try:
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
-                response = await client.get(
-                    f"https://www.virustotal.com/api/v3/ip_addresses/{ip}",
+                response = await _request_with_retry(
+                    client,
+                    "GET",
+                    f"{VT_BASE_URL}/ip_addresses/{ip}",
+                    provider="VirusTotal",
                     headers={"x-apikey": settings.VIRUSTOTAL_API_KEY},
                 )
-                response.raise_for_status()
                 payload = response.json()
         except Exception as exc:
             logger.warning("VirusTotal lookup failed for {}: {}", ip, exc)
-            return VTResult(ip=ip, provider_status="error", scanned_at=now)
+            return VTResult(
+                lookup_key=ip,
+                scan_type="ip",
+                ip=ip,
+                provider_status="error",
+                scanned_at=now,
+            )
 
-        stats = (
-            payload.get("data", {})
-            .get("attributes", {})
-            .get("last_analysis_stats", {})
-        )
-        malicious = int(stats.get("malicious", 0) or 0)
-        suspicious = int(stats.get("suspicious", 0) or 0)
-        harmless = int(stats.get("harmless", 0) or 0)
-        undetected = int(stats.get("undetected", 0) or 0)
-        total = malicious + suspicious + harmless + undetected
-        score = _vt_score(malicious, suspicious, total)
-        threat_level = _threat_level(score)
-
-        cache = await self._upsert_vt_cache(
-            ip=ip,
-            threat_level=threat_level,
-            malicious_count=malicious,
-            suspicious_count=suspicious,
-            total_engines=total,
-            threat_score=score,
-            raw=payload,
+        return await self._persist_vt_payload(
+            lookup_key=ip,
+            scan_type="ip",
+            payload=payload,
             scanned_at=now,
+            ip=ip,
+            cached=False,
+            provider_status="ok",
         )
-        result = self._vt_result_from_cache(cache, cached=False, provider_status="ok")
-        result.harmless_count = harmless
-        result.undetected_count = undetected
-        return result
+
+    async def check_file(self, file_bytes: bytes) -> VTResult:
+        """Compute SHA-256 and query VirusTotal's file analysis endpoints."""
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+        cached = await self._get_fresh_vt_cache(file_hash, "file")
+        if cached is not None:
+            return self._vt_result_from_cache(cached, cached=True, provider_status="ok")
+
+        now = _now_utc()
+        if not settings.virustotal_configured:
+            return VTResult(
+                lookup_key=file_hash,
+                scan_type="file",
+                provider_status="skipped_missing_api_key",
+                scanned_at=now,
+            )
+
+        try:
+            async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
+                headers = {"x-apikey": settings.VIRUSTOTAL_API_KEY}
+                try:
+                    response = await _request_with_retry(
+                        client,
+                        "GET",
+                        f"{VT_BASE_URL}/files/{file_hash}",
+                        provider="VirusTotal",
+                        headers=headers,
+                    )
+                    payload = response.json()
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code != 404:
+                        raise
+                    response = await _request_with_retry(
+                        client,
+                        "POST",
+                        f"{VT_BASE_URL}/files",
+                        provider="VirusTotal",
+                        headers=headers,
+                        files={"file": ("upload.bin", file_bytes)},
+                    )
+                    upload_payload = response.json()
+                    analysis_id = (
+                        upload_payload.get("data", {})
+                        .get("id")
+                    )
+                    if not analysis_id:
+                        raise ValueError("VirusTotal file upload did not return an analysis id")
+                    payload = await _poll_vt_analysis(client, analysis_id, headers)
+        except Exception as exc:
+            logger.warning("VirusTotal file scan failed for {}: {}", file_hash, exc)
+            return VTResult(
+                lookup_key=file_hash,
+                scan_type="file",
+                provider_status="error",
+                scanned_at=now,
+            )
+
+        return await self._persist_vt_payload(
+            lookup_key=file_hash,
+            scan_type="file",
+            payload=payload,
+            scanned_at=now,
+            cached=False,
+            provider_status="ok",
+        )
+
+    async def check_url(self, url: str) -> VTResult:
+        """Submit and poll VirusTotal's URL analysis endpoint."""
+        lookup_key = url.strip()
+        cached = await self._get_fresh_vt_cache(lookup_key, "url")
+        if cached is not None:
+            return self._vt_result_from_cache(cached, cached=True, provider_status="ok")
+
+        now = _now_utc()
+        if not settings.virustotal_configured:
+            return VTResult(
+                lookup_key=lookup_key,
+                scan_type="url",
+                provider_status="skipped_missing_api_key",
+                scanned_at=now,
+            )
+
+        try:
+            async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
+                headers = {"x-apikey": settings.VIRUSTOTAL_API_KEY}
+                response = await _request_with_retry(
+                    client,
+                    "POST",
+                    f"{VT_BASE_URL}/urls",
+                    provider="VirusTotal",
+                    headers=headers,
+                    data={"url": lookup_key},
+                )
+                submit_payload = response.json()
+                analysis_id = submit_payload.get("data", {}).get("id")
+                if not analysis_id:
+                    raise ValueError("VirusTotal URL submission did not return an analysis id")
+                payload = await _poll_vt_analysis(client, analysis_id, headers)
+        except Exception as exc:
+            logger.warning("VirusTotal URL scan failed for {}: {}", lookup_key, exc)
+            return VTResult(
+                lookup_key=lookup_key,
+                scan_type="url",
+                provider_status="error",
+                scanned_at=now,
+            )
+
+        return await self._persist_vt_payload(
+            lookup_key=lookup_key,
+            scan_type="url",
+            payload=payload,
+            scanned_at=now,
+            cached=False,
+            provider_status="ok",
+        )
 
     async def enrich(self, ip: str) -> EnrichedThreatContext:
         """Return combined AbuseIPDB, GeoIP, and VirusTotal context."""
@@ -168,9 +290,16 @@ class ThreatIntelService:
             return row
         return None
 
-    async def _get_fresh_vt_cache(self, ip: str) -> VirusScanCache | None:
+    async def _get_fresh_vt_cache(
+        self,
+        lookup_key: str,
+        scan_type: Literal["ip", "file", "url"],
+    ) -> VirusScanCache | None:
         row = (await self.db.execute(
-            select(VirusScanCache).where(VirusScanCache.lookup_key == ip)
+            select(VirusScanCache).where(
+                VirusScanCache.lookup_key == lookup_key,
+                VirusScanCache.scan_type == scan_type,
+            )
         )).scalar_one_or_none()
         if row and _is_fresh(row.scanned_at):
             return row
@@ -192,6 +321,8 @@ class ThreatIntelService:
             row = IPReputationCache(ip_address=ip)
             self.db.add(row)
 
+        asn, as_org = _parse_as_field(geo_data.get("as"))
+
         row.looked_up_at = looked_up_at
         row.abuse_confidence_score = _optional_int(abuse_data.get("abuseConfidenceScore"))
         row.total_reports = _optional_int(abuse_data.get("totalReports"))
@@ -203,15 +334,55 @@ class ThreatIntelService:
         row.city = geo_data.get("city")
         row.latitude = _optional_float(geo_data.get("lat"))
         row.longitude = _optional_float(geo_data.get("lon"))
+        row.asn = asn
+        row.as_org = as_org
         row.threat_score = threat_score
         row.raw_result_json = json.dumps(raw)
         await self.db.flush()
         await self.db.refresh(row)
         return row
 
+    async def _persist_vt_payload(
+        self,
+        lookup_key: str,
+        scan_type: Literal["ip", "file", "url"],
+        payload: Dict[str, Any],
+        scanned_at: str,
+        provider_status: str,
+        cached: bool,
+        ip: str | None = None,
+    ) -> VTResult:
+        stats = _extract_vt_stats(payload)
+        malicious = int(stats.get("malicious", 0) or 0)
+        suspicious = int(stats.get("suspicious", 0) or 0)
+        harmless = int(stats.get("harmless", 0) or 0)
+        undetected = int(stats.get("undetected", 0) or 0)
+        total = malicious + suspicious + harmless + undetected
+        score = _vt_score(malicious, suspicious, total)
+        threat_level = _threat_level(score)
+
+        cache = await self._upsert_vt_cache(
+            lookup_key=lookup_key,
+            scan_type=scan_type,
+            threat_level=threat_level,
+            malicious_count=malicious,
+            suspicious_count=suspicious,
+            total_engines=total,
+            threat_score=score,
+            raw=payload,
+            scanned_at=scanned_at,
+        )
+        result = self._vt_result_from_cache(cache, cached=cached, provider_status=provider_status)
+        result.harmless_count = harmless
+        result.undetected_count = undetected
+        if ip:
+            result.ip = ip
+        return result
+
     async def _upsert_vt_cache(
         self,
-        ip: str,
+        lookup_key: str,
+        scan_type: Literal["ip", "file", "url"],
         threat_level: str,
         malicious_count: int,
         suspicious_count: int,
@@ -221,13 +392,16 @@ class ThreatIntelService:
         scanned_at: str,
     ) -> VirusScanCache:
         row = (await self.db.execute(
-            select(VirusScanCache).where(VirusScanCache.lookup_key == ip)
+            select(VirusScanCache).where(
+                VirusScanCache.lookup_key == lookup_key,
+                VirusScanCache.scan_type == scan_type,
+            )
         )).scalar_one_or_none()
         if row is None:
-            row = VirusScanCache(lookup_key=ip, scan_type="ip")
+            row = VirusScanCache(lookup_key=lookup_key, scan_type=scan_type)
             self.db.add(row)
 
-        row.scan_type = "ip"
+        row.scan_type = scan_type
         row.scanned_at = scanned_at
         row.threat_level = threat_level
         row.malicious_count = malicious_count
@@ -254,6 +428,8 @@ class ThreatIntelService:
             city=row.city,
             latitude=row.latitude,
             longitude=row.longitude,
+            asn=row.asn,
+            as_org=row.as_org,
             threat_score=round(row.threat_score or 0.0, 2),
             cached=cached,
             looked_up_at=row.looked_up_at,
@@ -267,9 +443,11 @@ class ThreatIntelService:
         provider_status: str,
     ) -> VTResult:
         raw = _loads(row.raw_result_json)
-        stats = raw.get("data", {}).get("attributes", {}).get("last_analysis_stats", {})
+        stats = _extract_vt_stats(raw)
         return VTResult(
-            ip=row.lookup_key,
+            lookup_key=row.lookup_key,
+            scan_type=row.scan_type,  # type: ignore[arg-type]
+            ip=row.lookup_key if row.scan_type == "ip" else None,
             provider_status=provider_status,
             threat_level=row.threat_level,
             malicious_count=row.malicious_count,
@@ -282,6 +460,97 @@ class ThreatIntelService:
             scanned_at=row.scanned_at,
             raw=raw,
         )
+
+
+async def _request_with_retry(
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    *,
+    provider: str,
+    **kwargs: Any,
+) -> httpx.Response:
+    last_exc: Exception | None = None
+    for attempt in range(1, MAX_HTTP_ATTEMPTS + 1):
+        try:
+            response = await client.request(method, url, **kwargs)
+            if response.status_code >= 500:
+                raise httpx.HTTPStatusError(
+                    f"{provider} returned {response.status_code}",
+                    request=response.request,
+                    response=response,
+                )
+            response.raise_for_status()
+            return response
+        except httpx.HTTPStatusError as exc:
+            if 400 <= exc.response.status_code < 500:
+                raise
+            last_exc = exc
+        except (httpx.TransportError, httpx.TimeoutException) as exc:
+            last_exc = exc
+
+        if attempt < MAX_HTTP_ATTEMPTS:
+            delay = RETRY_BACKOFF_SECONDS[attempt - 1]
+            logger.warning(
+                "{provider} attempt {attempt}/{max_attempts} failed for {url}: {error}. Retrying in {delay}s.",
+                provider=provider,
+                attempt=attempt,
+                max_attempts=MAX_HTTP_ATTEMPTS,
+                url=url,
+                error=last_exc,
+                delay=delay,
+            )
+            await asyncio.sleep(delay)
+
+    assert last_exc is not None
+    logger.warning(
+        "{provider} gave up after {max_attempts} attempts for {url}: {error}",
+        provider=provider,
+        max_attempts=MAX_HTTP_ATTEMPTS,
+        url=url,
+        error=last_exc,
+    )
+    raise last_exc
+
+
+async def _poll_vt_analysis(
+    client: httpx.AsyncClient,
+    analysis_id: str,
+    headers: Dict[str, str],
+) -> Dict[str, Any]:
+    for attempt in range(1, URL_POLL_ATTEMPTS + 1):
+        response = await _request_with_retry(
+            client,
+            "GET",
+            f"{VT_BASE_URL}/analyses/{analysis_id}",
+            provider="VirusTotal",
+            headers=headers,
+        )
+        payload = response.json()
+        status = payload.get("data", {}).get("attributes", {}).get("status")
+        if status == "completed":
+            return payload
+        if attempt < URL_POLL_ATTEMPTS:
+            await asyncio.sleep(URL_POLL_INTERVAL_SECONDS)
+    raise TimeoutError(f"VirusTotal analysis {analysis_id} did not complete in time")
+
+
+def _extract_vt_stats(payload: Dict[str, Any]) -> Dict[str, Any]:
+    attributes = payload.get("data", {}).get("attributes", {})
+    stats = attributes.get("last_analysis_stats")
+    if stats:
+        return stats
+    stats = attributes.get("stats")
+    return stats or {}
+
+
+def _parse_as_field(raw_as: Any) -> tuple[str | None, str | None]:
+    if not raw_as or not isinstance(raw_as, str):
+        return None, None
+    match = re.match(r"^(AS\d+)\s+(.+)$", raw_as.strip())
+    if match:
+        return match.group(1), match.group(2)
+    return raw_as, None
 
 
 def _now_utc() -> str:

@@ -38,6 +38,7 @@ import pandas as pd
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from db.database import AsyncSessionLocal
 from db.models import PacketEvent
 from models.loader import ModelRegistry
@@ -492,13 +493,15 @@ def _classify_store_and_score_flow(
     flow: Dict[str, Any],
     features: Dict[str, Any],
     registry: ModelRegistry,
+    model_type: str | None = None,
 ) -> None:
     """Classify a live packet/flow, keep it in memory, persist it, and score risky IPs."""
     feature_coverage = 0.0
     if registry.packet_classifier_available:
         try:
+            classifier = registry.require_packet_classifier(model_type)
             df = pd.DataFrame([features])
-            result = registry.packet_classifier.predict(df)
+            result = classifier.predict(df)
             row = result.iloc[0]
             prediction = str(row.get("prediction", "Insufficient Evidence"))
             confidence = _float(row.get("confidence"), default=0.0)
@@ -594,7 +597,7 @@ async def _persist_packet_event(flow: Dict[str, Any], feature_coverage: float) -
                 missing_feature_count=max(0, 32 - int(flow.get("features_extracted") or 0)),
                 traffic_schema="live-capture-single-packet",
                 threat_score_contribution=float(flow.get("threat_score") or 0.0),
-                source="realtime",
+                source=flow.get("source") or "realtime",
             )
             session.add(event)
             if _should_score_packet(flow):
@@ -943,6 +946,62 @@ class PacketCaptureService:
             suspicious_count=suspicious,
             malicious_count=malicious,
             avg_threat_score=round(sum(scores) / len(scores), 2) if scores else 0.0,
+        )
+
+    async def import_pcap(
+        self,
+        file_bytes: bytes,
+        model_type: str | None = None,
+    ) -> CaptureStatusResponse:
+        from scapy.all import IP, TCP, UDP
+        from scapy.utils import PcapReader
+        import io
+
+        processed = 0
+        reader = PcapReader(io.BytesIO(file_bytes))
+        try:
+            for pkt in reader:
+                if processed >= settings.MAX_PCAP_PACKETS:
+                    break
+                if not hasattr(pkt, "haslayer") or not pkt.haslayer(IP):
+                    continue
+                ip = pkt[IP]
+                flow: Dict[str, Any] = {
+                    "packet_id": str(uuid.uuid4())[:8],
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "src_ip": ip.src,
+                    "dst_ip": ip.dst,
+                    "pkt_size": len(pkt),
+                    "protocol": "OTHER",
+                    "src_port": None,
+                    "dst_port": None,
+                    "prediction": "Pending",
+                    "confidence": 0.0,
+                    "threat_score": 0.0,
+                    "features_extracted": 0,
+                    "source": "pcap_import",
+                }
+                if pkt.haslayer(TCP):
+                    tcp = pkt[TCP]
+                    flow["protocol"] = "TCP"
+                    flow["src_port"] = tcp.sport
+                    flow["dst_port"] = tcp.dport
+                elif pkt.haslayer(UDP):
+                    udp = pkt[UDP]
+                    flow["protocol"] = "UDP"
+                    flow["src_port"] = udp.sport
+                    flow["dst_port"] = udp.dport
+                features = _extract_scapy_features(pkt, flow)
+                _classify_store_and_score_flow(flow, features, self.registry, model_type=model_type)
+                processed += 1
+        finally:
+            reader.close()
+
+        return CaptureStatusResponse(
+            success=True,
+            is_running=False,
+            packets_captured=processed,
+            message=f"Imported {processed} packet(s) from PCAP.",
         )
 
     # ------------------------------------------------------------------

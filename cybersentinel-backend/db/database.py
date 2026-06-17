@@ -110,6 +110,26 @@ async def create_tables() -> None:
     """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _ensure_column_migrations(conn)
+
+
+async def _ensure_column_migrations(conn) -> None:
+    """Add columns introduced after initial deploy without a full migration tool."""
+    if not settings.DATABASE_URL.startswith("sqlite"):
+        return
+
+    columns = {
+        "ip_reputation_cache": {
+            "asn": "VARCHAR(16)",
+            "as_org": "VARCHAR(256)",
+        },
+    }
+    for table, defs in columns.items():
+        existing = await conn.execute(text(f"PRAGMA table_info({table})"))
+        present = {row[1] for row in existing.fetchall()}
+        for name, ddl in defs.items():
+            if name not in present:
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
 async def check_database() -> bool:

@@ -23,6 +23,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.severity import (
+    is_elevated_firewall_severity,
+    public_to_firewall_severity,
+    translate_firewall_severity,
+)
 from db.models import FirewallAlert
 from models.loader import ModelRegistry
 from schemas.firewall import (
@@ -60,12 +65,13 @@ class FirewallService:
         file_bytes: bytes,
         filename: str,
         source: str = "auto",
+        clustering_algorithm: str | None = None,
     ) -> FirewallAnalyzeResponse:
         """
         Parse an uploaded firewall log file and run the full pipeline.
         Supports Windows pfirewall.log and Linux iptables/UFW logs.
         """
-        pipeline = self.registry.require_firewall_pipeline()
+        pipeline = self.registry.require_firewall_pipeline(clustering_algorithm)
 
         # Detect log source from filename if auto
         detected_source = _detect_source(filename, source)
@@ -108,10 +114,9 @@ class FirewallService:
             success=True,
             buffered_events=int(results.get("buffered_events", 0)),
             scored_events=int(results.get("scored_events", 0)),
-            threat_signals=saved_signals,
+            threat_signals=[_signal_to_public(s) for s in saved_signals],
             alert_triggered=any(
-                s.severity in ("Suspicious", "Malicious-like", "Critical")
-                for s in saved_signals
+                is_elevated_firewall_severity(s.severity) for s in saved_signals
             ),
         )
 
@@ -135,9 +140,20 @@ class FirewallService:
             FirewallAlert.acknowledged == False  # noqa: E712
         )
 
-        if severity_filter:
-            query = query.where(FirewallAlert.severity == severity_filter)
-            count_query = count_query.where(FirewallAlert.severity == severity_filter)
+        internal_filter = public_to_firewall_severity(severity_filter) if severity_filter else None
+        if severity_filter and internal_filter is None:
+            return FirewallAlertsResponse(
+                success=True,
+                total=0,
+                page=page,
+                page_size=page_size,
+                unacknowledged_count=0,
+                alerts=[],
+            )
+
+        if internal_filter:
+            query = query.where(FirewallAlert.severity == internal_filter)
+            count_query = count_query.where(FirewallAlert.severity == internal_filter)
 
         if unacknowledged_only:
             query = query.where(FirewallAlert.acknowledged == False)  # noqa: E712
@@ -153,8 +169,29 @@ class FirewallService:
             page=page,
             page_size=page_size,
             unacknowledged_count=unack_count,
-            alerts=[FirewallAlertOut.model_validate(row) for row in rows],
+            alerts=[_alert_to_public(row) for row in rows],
         )
+
+    async def fetch_alerts_for_export(
+        self,
+        severity_filter: str | None = None,
+        unacknowledged_only: bool = False,
+    ) -> list[FirewallAlert]:
+        """Return all firewall alerts matching the export filters."""
+        query = select(FirewallAlert).order_by(FirewallAlert.threat_score.desc())
+
+        internal_filter = public_to_firewall_severity(severity_filter) if severity_filter else None
+        if severity_filter and internal_filter is None:
+            return []
+
+        if internal_filter:
+            query = query.where(FirewallAlert.severity == internal_filter)
+
+        if unacknowledged_only:
+            query = query.where(FirewallAlert.acknowledged == False)  # noqa: E712
+
+        rows = (await self.db.execute(query.limit(settings.MAX_PAGE_SIZE * 20))).scalars().all()
+        return list(rows)
 
     async def acknowledge_alert(self, alert_id: str) -> AckResponse:
         """Mark one alert as acknowledged by the admin in Flutter."""
@@ -198,7 +235,7 @@ class FirewallService:
         return FirewallAnalyzeResponse(
             success=True,
             validation_report=validation,
-            threat_signals=saved_signals,
+            threat_signals=[_signal_to_public(s) for s in saved_signals],
             anomaly_results=anomaly_rows,
             cluster_results=cluster_rows,
             total_ips_analyzed=len(cluster_df) if not cluster_df.empty else 0,
@@ -248,6 +285,15 @@ class FirewallService:
 # ---------------------------------------------------------------------------
 # Pure helper functions
 # ---------------------------------------------------------------------------
+
+def _signal_to_public(signal: ThreatSignal) -> ThreatSignal:
+    return signal.model_copy(update={"severity": translate_firewall_severity(signal.severity)})
+
+
+def _alert_to_public(row: FirewallAlert) -> FirewallAlertOut:
+    alert = FirewallAlertOut.model_validate(row)
+    return alert.model_copy(update={"severity": translate_firewall_severity(alert.severity)})
+
 
 def _detect_source(filename: str, hint: str) -> str:
     """Detect log format from filename if hint is 'auto'."""
@@ -323,7 +369,7 @@ def _df_to_anomaly_rows(df: pd.DataFrame) -> List[AnomalyRow]:
                 src_ip=str(row["src_ip"]),
                 hour_window=str(row["hour_window"]),
                 anomaly_score=float(row["anomaly_score"]),
-                severity=str(row["severity"]),
+                severity=translate_firewall_severity(str(row["severity"])),
                 consensus_anomaly=bool(row["consensus_anomaly"]),
                 failed_attempts=float(row.get("failed_attempts", 0)),
             ))

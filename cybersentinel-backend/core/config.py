@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     ADMIN_API_KEY: str = ""
+    ANALYST_API_KEY: str = ""
 
     @field_validator("DEBUG", mode="before")
     @classmethod
@@ -181,6 +182,13 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     MAX_UPLOAD_SIZE_MB: int = 50  # for CSV / log file uploads
     MAX_BATCH_FLOWS: int = 10_000
+    MAX_PCAP_PACKETS: int = 5000
+    DASHBOARD_TREND_DAYS: int = 7
+    COPILOT_LLM_API_KEY: str = ""
+    COPILOT_LLM_BASE_URL: str = ""
+    COPILOT_LLM_MODEL: str = ""
+    CYBERSENTINEL_MASTER_KEY: str = ""
+    SECRETS_ENC_PATH: Path = BASE_DIR / "secrets.enc"
 
     @property
     def max_upload_bytes(self) -> int:
@@ -192,8 +200,11 @@ class Settings(BaseSettings):
 
     @property
     def supervised_bundle_path(self) -> Path:
-        """Full path to the unified supervised model bundle."""
+        """Full path to the default random_forest supervised model bundle."""
         return self.SUPERVISED_MODEL_DIR / "packet_classifier_pipeline.joblib"
+
+    def supervised_bundle_path_for(self, model_type: str) -> Path:
+        return self.SUPERVISED_MODEL_DIR / f"packet_classifier_pipeline.{model_type}.joblib"
 
     @property
     def anomaly_model_path(self) -> Path:
@@ -202,6 +213,9 @@ class Settings(BaseSettings):
     @property
     def clustering_model_path(self) -> Path:
         return self.UNSUPERVISED_MODEL_DIR / "clustering_model.joblib"
+
+    def clustering_model_path_for(self, algorithm: str) -> Path:
+        return self.UNSUPERVISED_MODEL_DIR / f"clustering_model.{algorithm}.joblib"
 
     @property
     def virustotal_configured(self) -> bool:
@@ -248,7 +262,11 @@ def get_settings() -> Settings:
     Using lru_cache means .env is only read once at startup.
     Call get_settings.cache_clear() in tests to reload.
     """
-    return Settings()
+    instance = Settings()
+    from core.secrets import load_secrets_into_settings
+
+    load_secrets_into_settings(instance)
+    return instance
 
 
 # Convenience alias — most files just do: from core.config import settings

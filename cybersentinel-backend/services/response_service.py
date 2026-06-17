@@ -1,15 +1,13 @@
 """
 Threat Response Center service.
-
-The service records every response action in an audit table. By default actions
-are dry-run records. Real firewall execution can be enabled per request later,
-but this implementation keeps the platform safe for development and demos.
 """
 
 from __future__ import annotations
 
 import platform
+import subprocess
 
+from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,8 +37,24 @@ class ResponseService:
         executed = False
 
         if execution_enabled:
-            status = "recorded"
-            message = "Execution hooks are intentionally audit-first in this build; action recorded."
+            logger.warning(
+                "RESPONSE ACTION EXECUTION ENABLED — running OS command for {action} on {ip}: {command}",
+                action=request.action,
+                ip=request.target_ip,
+                command=command_preview,
+            )
+            completed = subprocess.run(
+                command_preview,
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            executed = completed.returncode == 0
+            status = "executed" if executed else "failed"
+            output = (completed.stdout or "").strip()
+            error = (completed.stderr or "").strip()
+            message = output or error or f"Command exited with code {completed.returncode}"
 
         row = ResponseAction(
             target_ip=request.target_ip,

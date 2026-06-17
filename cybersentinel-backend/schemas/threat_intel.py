@@ -8,7 +8,7 @@ so routers and scoring services do not expose raw provider payloads directly.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -29,6 +29,8 @@ class IPIntelResult(BaseModel):
     city: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    asn: Optional[str] = None
+    as_org: Optional[str] = None
     threat_score: float = 0.0
     cached: bool = False
     looked_up_at: str
@@ -36,10 +38,12 @@ class IPIntelResult(BaseModel):
 
 
 class VTResult(BaseModel):
-    """VirusTotal IP address report summarized for CyberSentinel."""
+    """VirusTotal scan result summarized for CyberSentinel."""
 
     success: bool = True
-    ip: str
+    lookup_key: str
+    scan_type: Literal["ip", "file", "url"] = "ip"
+    ip: Optional[str] = None
     provider_status: str = "skipped"
     threat_level: str = "unknown"
     malicious_count: int = 0
@@ -51,6 +55,12 @@ class VTResult(BaseModel):
     cached: bool = False
     scanned_at: str
     raw: Dict[str, Any] = Field(default_factory=dict)
+
+
+class URLScanRequest(BaseModel):
+    """Request body for POST /api/v1/intel/url."""
+
+    url: str = Field(min_length=1, max_length=256)
 
 
 class EnrichedThreatContext(BaseModel):

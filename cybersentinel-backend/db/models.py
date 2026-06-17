@@ -245,6 +245,8 @@ class IPReputationCache(Base):
     city: Mapped[str | None] = mapped_column(String(64))
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
+    asn: Mapped[str | None] = mapped_column(String(16))
+    as_org: Mapped[str | None] = mapped_column(String(256))
 
     # Derived threat score (0-100) fed into ensemble
     threat_score: Mapped[float] = mapped_column(Float, default=0.0)

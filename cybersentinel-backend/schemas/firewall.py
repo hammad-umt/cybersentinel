@@ -62,7 +62,7 @@ class ThreatSignal(BaseModel):
     threat_score: float = Field(description="Fused threat score 0-100")
     anomaly_score: float
     heuristic_score: float
-    severity: str = Field(description="Normal | Suspicious | Malicious-like | Critical")
+    severity: str = Field(description="Low | Medium | High | Critical")
     cluster_label: str = Field(description="Normal | Suspicious | Isolated | Attack")
     attack_signals: int
     consensus_anomaly: bool

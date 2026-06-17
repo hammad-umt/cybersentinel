@@ -19,14 +19,16 @@ from fastapi.responses import JSONResponse, Response
 from loguru import logger
 
 from core.config import settings
-from core.security import require_admin_api_key
+from core.security import enforce_read_only_analyst, require_role, resolve_api_role
 from db.database import check_database, create_tables, engine
 from models.loader import ModelRegistry
 from routers.copilot import router as copilot_router
 from routers.dashboard import router as dashboard_router
 from routers.firewall import router as firewall_router
+from routers.intel import router as intel_router
 from routers.packet import router as packet_router
 from routers.capture import router as capture_router
+from routers.reports import router as reports_router
 from routers.response import router as response_router
 from routers.threat import router as threat_router
 from services.packet_capture_service import set_background_event_loop
@@ -66,6 +68,52 @@ app.add_middleware(
 
 
 _rate_limit_buckets: dict[str, deque[float]] = defaultdict(deque)
+PUBLIC_PATHS = {
+    "/",
+    "/health",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/meta.json",
+    "/favicon.ico",
+}
+
+
+@app.middleware("http")
+async def api_auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/api/v1"):
+        if not settings.ADMIN_API_KEY and not settings.ANALYST_API_KEY:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"success": False, "detail": "API keys are not configured."},
+            )
+        role = resolve_api_role(
+            request.headers.get("X-Admin-Api-Key"),
+            request.headers.get("X-Analyst-Api-Key"),
+        )
+        if role is None:
+            client_ip = request.client.host if request.client else "unknown"
+            logger.warning(
+                "Unauthorized API access from {ip} {method} {path}",
+                ip=client_ip,
+                method=request.method,
+                path=path,
+            )
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"success": False, "detail": "Invalid or missing API key."},
+            )
+        try:
+            enforce_read_only_analyst(request, role)
+        except HTTPException as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"success": False, "detail": exc.detail},
+            )
+        request.state.auth_role = role
+    response = await call_next(request)
+    return response
 
 
 @app.middleware("http")
@@ -93,9 +141,11 @@ app.include_router(packet_router)
 app.include_router(firewall_router)
 app.include_router(capture_router)
 app.include_router(threat_router)
+app.include_router(intel_router)
 app.include_router(dashboard_router)
 app.include_router(response_router)
 app.include_router(copilot_router)
+app.include_router(reports_router)
 
 
 @app.exception_handler(HTTPException)
@@ -170,7 +220,11 @@ async def health(request: Request) -> dict[str, Any]:
     }
 
 
-@app.post("/api/v1/admin/reload-models", tags=["Admin"], dependencies=[Depends(require_admin_api_key)])
+@app.post(
+    "/api/v1/admin/reload-models",
+    tags=["Admin"],
+    dependencies=[Depends(require_role("admin"))],
+)
 async def reload_models(request: Request) -> dict[str, Any]:
     models: ModelRegistry = request.app.state.models
     await models.reload()

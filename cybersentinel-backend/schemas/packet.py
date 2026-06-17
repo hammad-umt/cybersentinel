@@ -98,7 +98,12 @@ class FlowFeatures(BaseModel):
 
 class PacketClassifyRequest(BaseModel):
     """Single flow classification request from Flutter."""
+
     flow: FlowFeatures
+    model_type: Optional[Literal["random_forest", "decision_tree", "svm"]] = Field(
+        default=None,
+        description="Optional classifier type; defaults to random_forest when omitted",
+    )
 
 
 class PacketBatchRequest(BaseModel):

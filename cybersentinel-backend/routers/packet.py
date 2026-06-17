@@ -12,11 +12,13 @@ Endpoints:
 
 from __future__ import annotations
 
+import csv
 import io
 from typing import Annotated, Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, status
+from fastapi.responses import StreamingResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,7 +68,7 @@ async def classify_single(
     service: ServiceDep,
 ) -> PacketClassifyResponse:
     try:
-        return await service.classify_single(body.flow)
+        return await service.classify_single(body.flow, model_type=body.model_type)
     except ModelNotAvailableError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
     except Exception as exc:
@@ -87,6 +89,10 @@ async def classify_single(
 async def classify_batch_csv(
     service: ServiceDep,
     file: UploadFile = File(..., description="CSV file of network flows"),
+    model_type: Optional[str] = Query(
+        default=None,
+        description="random_forest | decision_tree | svm",
+    ),
 ) -> PacketBatchResponse:
     # Validate file type
     filename = file.filename or ""
@@ -131,7 +137,7 @@ async def classify_batch_csv(
             }
             flows.append(FlowFeatures.model_validate(clean_row))
 
-        return await service.classify_batch(flows, source="batch")
+        return await service.classify_batch(flows, source="batch", model_type=model_type)
 
     except ModelNotAvailableError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
@@ -166,3 +172,59 @@ async def get_events(
     except Exception as exc:
         logger.exception("Unexpected error in get_events")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.get(
+    "/events.csv",
+    summary="Export packet classification history as CSV",
+    response_class=StreamingResponse,
+)
+async def export_events_csv(
+    service: ServiceDep,
+    prediction: Optional[str] = Query(
+        default=None,
+        description="Filter by label: Normal | Suspicious | Malicious",
+    ),
+) -> StreamingResponse:
+    try:
+        rows = await service.fetch_events_for_export(prediction_filter=prediction)
+        csv_bytes = _packet_events_to_csv(rows).encode("utf-8")
+        return StreamingResponse(
+            iter([csv_bytes]),
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="packet-events.csv"'},
+        )
+    except Exception as exc:
+        logger.exception("Unexpected error in export_events_csv")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+def _packet_events_to_csv(rows) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "id",
+        "timestamp",
+        "src_ip",
+        "dst_ip",
+        "dst_port",
+        "protocol",
+        "prediction",
+        "confidence",
+        "threat_score_contribution",
+        "source",
+    ])
+    for row in rows:
+        writer.writerow([
+            row.id,
+            row.timestamp,
+            row.src_ip or "",
+            row.dst_ip or "",
+            row.dst_port or "",
+            row.protocol or "",
+            row.prediction,
+            row.confidence,
+            row.threat_score_contribution,
+            row.source,
+        ])
+    return output.getvalue()

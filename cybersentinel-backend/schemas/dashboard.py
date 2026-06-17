@@ -4,7 +4,7 @@ Pydantic schemas for the SOC dashboard aggregation endpoints.
 
 from __future__ import annotations
 
-from typing import List
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -28,6 +28,17 @@ class RecentAlert(BaseModel):
     acknowledged: bool
 
 
+class GeoBucket(BaseModel):
+    country_code: str
+    count: int = 0
+
+
+class TrendPoint(BaseModel):
+    day: str
+    alert_count: int = 0
+    avg_threat_score: float = 0.0
+
+
 class DashboardSummary(BaseModel):
     success: bool = True
     packet_events: int = 0
@@ -40,3 +51,5 @@ class DashboardSummary(BaseModel):
     severity_distribution: List[SeverityBucket] = Field(default_factory=list)
     protocol_distribution: List[ProtocolBucket] = Field(default_factory=list)
     recent_alerts: List[RecentAlert] = Field(default_factory=list)
+    geo_distribution: Optional[List[GeoBucket]] = None
+    trend: Optional[List[TrendPoint]] = None

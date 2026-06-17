@@ -22,7 +22,7 @@ class UnifiedThreatScore(BaseModel):
     anomaly_score: float = Field(ge=0.0, le=100.0)
     intel_score: float = Field(ge=0.0, le=100.0)
     final_score: float = Field(ge=0.0, le=100.0)
-    severity: str
+    severity: str = Field(description="Low | Medium | High | Critical")
     evidence: Dict[str, Any] = Field(default_factory=dict)
     timestamp: str
 

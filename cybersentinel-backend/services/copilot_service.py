@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import FirewallAlert, PacketEvent, ResponseAction
 from schemas.copilot import CopilotAnswerResponse, CopilotQuestionRequest
+from core.severity import CRITICAL, HIGH, MEDIUM, translate_firewall_severity
+from services.copilot_rag import CopilotRetriever, maybe_llm_answer
 from services.threat_scoring_service import ThreatScoringService
 
 
@@ -21,6 +23,19 @@ class CopilotService:
         self.db = db
 
     async def answer(self, request: CopilotQuestionRequest) -> CopilotAnswerResponse:
+        retriever = CopilotRetriever(self.db)
+        chunks = await retriever.retrieve(request.question)
+        llm_answer = await maybe_llm_answer(request.question, chunks)
+        if llm_answer:
+            return CopilotAnswerResponse(
+                answer=llm_answer,
+                confidence="rag-llm-summary",
+                recommended_actions=[
+                    "Review cited telemetry in the dashboard and alert history.",
+                ],
+                evidence={"retrieved_chunks": [chunk.text for chunk in chunks]},
+            )
+
         ip = request.ip or _extract_ip(request.question)
         if ip:
             return await self._answer_for_ip(request.question, ip)
@@ -52,7 +67,7 @@ class CopilotService:
         if latest_alert:
             answer = (
                 f"{ip} currently scores {score.final_score}/100 ({score.severity}). "
-                f"The latest firewall alert is {latest_alert.severity} with score "
+                f"The latest firewall alert is {translate_firewall_severity(latest_alert.severity)} with score "
                 f"{latest_alert.threat_score:.1f}, and {len(alerts)} recent alert(s) "
                 f"were found for this IP."
             )
@@ -94,7 +109,7 @@ class CopilotService:
             top = alerts[0]
             answer = (
                 f"The highest current stored threat is {top.src_ip} with firewall score "
-                f"{top.threat_score:.1f} ({top.severity}). I found {len(alerts)} high-priority "
+                f"{top.threat_score:.1f} ({translate_firewall_severity(top.severity)}). I found {len(alerts)} high-priority "
                 f"alert candidate(s) and {len(packets)} recent packet event(s) for context."
             )
         else:
@@ -126,9 +141,9 @@ def _extract_ip(text: str) -> str | None:
 
 
 def _recommend(severity: str, has_actions: bool) -> list[str]:
-    if severity == "Critical":
+    if severity == CRITICAL:
         actions = ["Block the IP or add it to the watchlist from the Threat Response Center."]
-    elif severity in {"Malicious", "Suspicious"}:
+    elif severity in {HIGH, MEDIUM, CRITICAL}:
         actions = ["Investigate firewall evidence and enrich the IP reputation before blocking."]
     else:
         actions = ["Continue monitoring and compare with future packet/firewall activity."]

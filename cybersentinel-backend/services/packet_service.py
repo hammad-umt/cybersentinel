@@ -99,10 +99,12 @@ class PacketService:
     # ------------------------------------------------------------------
 
     async def classify_single(
-        self, flow: FlowFeatures
+        self,
+        flow: FlowFeatures,
+        model_type: str | None = None,
     ) -> PacketClassifyResponse:
         """Classify one flow and persist the result."""
-        classifier = self.registry.require_packet_classifier()
+        classifier = self.registry.require_packet_classifier(model_type)
         df = _flows_to_dataframe([flow])
 
         logger.debug("Classifying single flow from src_ip={}", flow.src_ip)
@@ -123,10 +125,13 @@ class PacketService:
         )
 
     async def classify_batch(
-        self, flows: List[FlowFeatures], source: str = "batch"
+        self,
+        flows: List[FlowFeatures],
+        source: str = "batch",
+        model_type: str | None = None,
     ) -> PacketBatchResponse:
         """Classify a list of flows (CSV upload) and persist all results."""
-        classifier = self.registry.require_packet_classifier()
+        classifier = self.registry.require_packet_classifier(model_type)
         df = _flows_to_dataframe(flows)
 
         logger.info("Classifying batch of {} flows", len(flows))
@@ -178,6 +183,19 @@ class PacketService:
             page_size=page_size,
             events=[PacketEventOut.model_validate(row) for row in rows],
         )
+
+    async def fetch_events_for_export(
+        self,
+        prediction_filter: str | None = None,
+    ) -> list[PacketEvent]:
+        """Return all packet events matching the export filters."""
+        query = select(PacketEvent).order_by(PacketEvent.timestamp.desc())
+
+        if prediction_filter:
+            query = query.where(PacketEvent.prediction == prediction_filter)
+
+        result = await self.db.execute(query.limit(settings.MAX_PAGE_SIZE * 20))
+        return list(result.scalars().all())
 
     # ------------------------------------------------------------------
     # Private helpers
