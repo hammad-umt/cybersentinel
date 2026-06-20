@@ -25,13 +25,8 @@ uploads/
 .coverage
 htmlcov/
 
-# Large datasets and generated ML artifacts
-supervised_learning/dataset/*
-!supervised_learning/dataset/README.md
-supervised_learning/models/*
-!supervised_learning/models/README.md
-unsupervised_learning/models/*
-!unsupervised_learning/models/README.md
+# Datasets and trained ML artifacts are tracked for this project.
+# Large CSV/model binaries are routed through Git LFS in .gitattributes.
 
 # OS/editor noise
 .DS_Store

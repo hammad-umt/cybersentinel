@@ -1,0 +1,103 @@
+{
+  "accuracy": 0.9999362041467305,
+  "precision_weighted": 0.9998724123633718,
+  "recall_weighted": 0.9999362041467305,
+  "f1_weighted": 0.9999043072376059,
+  "roc_auc_ovr_weighted": null,
+  "classification_report": {
+    "Malicious": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 0.0
+    },
+    "Normal": {
+      "precision": 0.9999362041467305,
+      "recall": 1.0,
+      "f1-score": 0.9999681010558551,
+      "support": 15674.0
+    },
+    "Suspicious": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 1.0
+    },
+    "accuracy": 0.9999362041467305,
+    "macro avg": {
+      "precision": 0.33331206804891017,
+      "recall": 0.3333333333333333,
+      "f1-score": 0.3333227003519517,
+      "support": 15675.0
+    },
+    "weighted avg": {
+      "precision": 0.9998724123633718,
+      "recall": 0.9999362041467305,
+      "f1-score": 0.9999043072376059,
+      "support": 15675.0
+    }
+  },
+  "confusion_matrix": [
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      15674,
+      0
+    ],
+    [
+      0,
+      1,
+      0
+    ]
+  ],
+  "classes": [
+    "Malicious",
+    "Normal",
+    "Suspicious"
+  ],
+  "class_distribution": {
+    "Normal": 78365,
+    "Suspicious": 7,
+    "Malicious": 1
+  },
+  "feature_importances": {
+    "Init_Win_bytes_backward": 0.09079437612255542,
+    "Fwd Packet Length Mean": 0.08269404505709041,
+    "Packet Length Std": 0.07432227747909959,
+    "Avg Fwd Segment Size": 0.07323201734111555,
+    "Packet Length Mean": 0.06404454486036018,
+    "Init_Win_bytes_forward": 0.05645446935302678,
+    "Average Packet Size": 0.052028699824150336,
+    "Total Length of Fwd Packets": 0.04930947242290919,
+    "Flow Bytes/s": 0.04881872272616065,
+    "Bwd Packet Length Mean": 0.048534540232255036,
+    "Avg Bwd Segment Size": 0.042106428961587915,
+    "Flow Duration": 0.03564665726441196,
+    "Bwd Packets/s": 0.030858869573578647,
+    "Total Length of Bwd Packets": 0.029797904466340033,
+    "Total Backward Packets": 0.029041875119381843,
+    "Flow IAT Mean": 0.027405875947413134,
+    "Flow IAT Std": 0.025967834051770576,
+    "Total Fwd Packets": 0.024174954382014963,
+    "Fwd IAT Mean": 0.023937877631556283,
+    "URG Flag Count": 0.0197565571505195,
+    "Flow Packets/s": 0.017489435368367518,
+    "Bwd IAT Mean": 0.017142041396359196,
+    "Fwd Packets/s": 0.013326669495773465,
+    "Active Mean": 0.008281567430802201,
+    "PSH Flag Count": 0.007159361410529229,
+    "Idle Mean": 0.006068871445376604,
+    "ACK Flag Count": 0.000805501525590912,
+    "SYN Flag Count": 0.0004675347355041038,
+    "Fwd PSH Flags": 0.0003304314589249461,
+    "FIN Flag Count": 5.857654679696374e-07,
+    "RST Flag Count": 5.934828007075512e-15,
+    "Fwd URG Flags": 0.0
+  },
+  "cv_f1_weighted_mean": null,
+  "cv_f1_weighted_std": null
+}
