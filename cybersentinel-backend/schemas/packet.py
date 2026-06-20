@@ -121,51 +121,41 @@ class PacketBatchRequest(BaseModel):
 
 class PacketPrediction(BaseModel):
     """
-    ML result for one flow.
-    Flutter uses 'prediction' to colour-code the row in the UI table.
+    SOC-grade fused packet decision for one flow.
+
+    Public fields separate Random Forest evidence from the final fusion result.
+    Internal RF probability/coverage fields are excluded from JSON output but
+    remain available to the service for persistence.
     """
     prediction: Literal["Normal", "Suspicious", "Malicious", "Insufficient Evidence"] = Field(
-        description="Normal | Suspicious | Malicious | Insufficient Evidence"
+        description="Final fused SOC decision"
     )
-    confidence: float = Field(
-        description="Confidence of the top prediction (0.0 – 1.0)"
-    )
+    risk_score: float = Field(0.0, ge=0.0, le=100.0, description="Final fused risk score")
+    rf_prediction: Literal["Normal", "Suspicious", "Malicious", "Insufficient Evidence"]
+    rf_confidence: float = Field(ge=0.0, le=1.0)
+    rf_probabilities: dict[str, float] = Field(default_factory=dict)
+    packet_anomaly_level: Literal["Normal", "Suspicious", "Malicious"] = "Normal"
+    packet_anomaly_score: float = Field(0.0, ge=0.0, le=100.0)
+    firewall_anomaly_level: Literal["Normal", "Suspicious", "Malicious"] = "Normal"
+    firewall_anomaly_score: float = Field(0.0, ge=0.0, le=100.0)
+    triggered_rules: List[str] = Field(default_factory=list)
+    final_confidence: float = Field(ge=0.0, le=1.0)
+    explanation: List[str] = Field(default_factory=list)
 
-    # Per-class probabilities — Flutter can use these for a bar chart
-    prob_normal: Optional[float] = None
-    prob_suspicious: Optional[float] = None
-    prob_malicious: Optional[float] = None
-
-    # Feature coverage tells Flutter how reliable this prediction is
-    feature_coverage: Optional[float] = Field(
-        None,
-        description="Fraction of expected features that were present (0.0 – 1.0)"
-    )
-    missing_feature_count: Optional[int] = None
-    traffic_schema: Optional[str] = Field(
-        None,
-        description="cicflowmeter-compatible | partially-derived-live-flow | insufficient-live-flow-features"
-    )
-
-    # Threat score contribution fed into ensemble (0-100)
-    threat_score_contribution: float = Field(
-        0.0,
-        description="How much this packet result contributes to the overall threat score"
-    )
-
-    # DB record ID — Flutter uses this to link to the detail view
-    event_id: Optional[str] = None
+    # Internal fields used for DB persistence. These are not part of the API
+    # response, keeping the JSON contract non-redundant.
+    prob_normal: Optional[float] = Field(default=None, exclude=True)
+    prob_suspicious: Optional[float] = Field(default=None, exclude=True)
+    prob_malicious: Optional[float] = Field(default=None, exclude=True)
+    feature_coverage: Optional[float] = Field(default=None, exclude=True)
+    missing_feature_count: Optional[int] = Field(default=None, exclude=True)
+    traffic_schema: Optional[str] = Field(default=None, exclude=True)
 
 
 class PacketClassifyResponse(BaseModel):
     """Response for single flow classification."""
     success: bool = True
     result: PacketPrediction
-    # Metadata
-    src_ip: Optional[str] = None
-    dst_ip: Optional[str] = None
-    dst_port: Optional[int] = None
-    protocol: Optional[str] = None
 
 
 class PacketBatchResponse(BaseModel):
@@ -180,8 +170,8 @@ class PacketBatchResponse(BaseModel):
     malicious_count: int = 0
     insufficient_evidence_count: int = 0
 
-    # Average threat score across all flows in this batch
-    avg_threat_score: float = 0.0
+    # Average final fused risk score across all flows in this batch
+    avg_risk_score: float = 0.0
 
 
 class PacketEventOut(BaseModel):
@@ -196,8 +186,8 @@ class PacketEventOut(BaseModel):
     dst_port: Optional[int] = None
     protocol: Optional[str] = None
     prediction: Literal["Normal", "Suspicious", "Malicious", "Insufficient Evidence"]
-    confidence: float
-    threat_score_contribution: float
+    rf_confidence: float = Field(validation_alias="confidence")
+    risk_score: float = Field(validation_alias="threat_score_contribution", ge=0.0, le=100.0)
     source: str
 
     model_config = {"from_attributes": True}  # allows ORM model → Pydantic

@@ -2,7 +2,7 @@
 routers/packet.py
 
 HTTP routes for the supervised packet classification module.
-Thin layer — all logic lives in services/packet_service.py.
+Thin layer - all logic lives in services/packet_service.py.
 
 Endpoints:
   POST /api/v1/packet/classify        — single flow
@@ -61,7 +61,7 @@ ServiceDep = Annotated[PacketService, Depends(get_packet_service)]
     summary="Classify a single network flow",
     description=(
         "Send one network flow's features and receive a Normal / Suspicious / "
-        "Malicious label with confidence scores and a threat score contribution."
+        "Malicious fused SOC label with separate RF and final confidence scores."
     ),
     dependencies=[Depends(require_role("user"))],
 )
@@ -215,8 +215,8 @@ def _packet_events_to_csv(rows) -> str:
         "dst_port",
         "protocol",
         "prediction",
-        "confidence",
-        "threat_score_contribution",
+        "rf_confidence",
+        "risk_score",
         "source",
     ])
     for row in rows:

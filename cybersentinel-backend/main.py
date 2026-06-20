@@ -203,6 +203,11 @@ async def health(request: Request) -> dict[str, Any]:
                 "metadata": models.packet_classifier_meta,
                 "path": str(settings.SUPERVISED_MODEL_DIR),
             },
+            "packet_anomaly_detector": {
+                "available": models.packet_anomaly_available,
+                "metadata": models.packet_anomaly_meta,
+                "path": str(settings.packet_anomaly_model_path),
+            },
             "firewall_pipeline": {
                 "available": models.firewall_pipeline_available,
                 "metadata": models.firewall_pipeline_meta,
@@ -223,5 +228,6 @@ async def reload_models(request: Request) -> dict[str, Any]:
     return {
         "success": True,
         "packet_classifier_available": models.packet_classifier_available,
+        "packet_anomaly_available": models.packet_anomaly_available,
         "firewall_pipeline_available": models.firewall_pipeline_available,
     }

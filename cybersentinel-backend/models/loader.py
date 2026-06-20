@@ -13,7 +13,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from core.config import settings
+from core.config import BASE_DIR, settings
 
 
 DEFAULT_PACKET_MODEL_TYPE = "random_forest"
@@ -28,19 +28,23 @@ class ModelRegistry:
 
     packet_classifiers: dict[str, object] = field(default_factory=dict, repr=False)
     packet_classifier: object | None = field(default=None, repr=False)
+    packet_anomaly_detector: object | None = field(default=None, repr=False)
     firewall_pipelines: dict[str, object] = field(default_factory=dict, repr=False)
     firewall_pipeline: object | None = field(default=None, repr=False)
 
     packet_classifier_available: bool = False
+    packet_anomaly_available: bool = False
     firewall_pipeline_available: bool = False
 
     packet_classifier_meta: dict = field(default_factory=dict)
+    packet_anomaly_meta: dict = field(default_factory=dict)
     firewall_pipeline_meta: dict = field(default_factory=dict)
 
     @classmethod
     async def load(cls) -> "ModelRegistry":
         registry = cls()
         await registry._load_packet_classifiers()
+        await registry._load_packet_anomaly_detector()
         await registry._load_firewall_pipelines()
         registry._log_summary()
         return registry
@@ -111,6 +115,30 @@ class ModelRegistry:
             self.packet_classifier = None
             self.packet_classifier_available = False
 
+    async def _load_packet_anomaly_detector(self) -> None:
+        model_path = settings.packet_anomaly_model_path
+        if not model_path.exists():
+            logger.warning(
+                "Packet Isolation Forest artifact not found: {path}. "
+                "Train it to enable packet anomaly detection.",
+                path=model_path,
+            )
+            return
+
+        try:
+            _add_to_sys_path(BASE_DIR)
+            from soc.packet_anomaly import PacketIsolationForestDetector
+
+            logger.info("Loading packet Isolation Forest detector...")
+            self.packet_anomaly_detector = PacketIsolationForestDetector.load(model_path)
+            self.packet_anomaly_available = True
+            self.packet_anomaly_meta = getattr(self.packet_anomaly_detector, "metadata", {})
+            logger.success("Packet Isolation Forest detector loaded.")
+        except Exception as exc:
+            logger.error("Failed to load packet Isolation Forest detector: {error}", error=exc)
+            self.packet_anomaly_detector = None
+            self.packet_anomaly_available = False
+
     async def _load_firewall_pipelines(self) -> None:
         anomaly_path = settings.anomaly_model_path
         if not anomaly_path.exists():
@@ -179,6 +207,7 @@ class ModelRegistry:
         logger.info("CyberSentinel ML Model Registry — startup summary")
         logger.info("=" * 55)
         _status(self.packet_classifier_available, "Supervised packet classifier")
+        _status(self.packet_anomaly_available, "Packet Isolation Forest detector")
         _status(self.firewall_pipeline_available, "Unsupervised firewall pipeline")
         logger.info("=" * 55)
 
@@ -187,10 +216,13 @@ class ModelRegistry:
         self.packet_classifiers = {}
         self.packet_classifier = None
         self.packet_classifier_available = False
+        self.packet_anomaly_detector = None
+        self.packet_anomaly_available = False
         self.firewall_pipelines = {}
         self.firewall_pipeline = None
         self.firewall_pipeline_available = False
         await self._load_packet_classifiers()
+        await self._load_packet_anomaly_detector()
         await self._load_firewall_pipelines()
         self._log_summary()
 
@@ -207,6 +239,9 @@ class ModelRegistry:
             "Train the model first by running supervised_learning/model.py "
             "then restart the server."
         )
+
+    def get_packet_anomaly_detector(self) -> object | None:
+        return self.packet_anomaly_detector
 
     def require_firewall_pipeline(self, clustering_algorithm: str | None = None) -> object:
         requested = clustering_algorithm or DEFAULT_CLUSTERING_ALGORITHM

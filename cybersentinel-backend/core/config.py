@@ -210,6 +210,10 @@ class Settings(BaseSettings):
         return self.UNSUPERVISED_MODEL_DIR / "anomaly_model.joblib"
 
     @property
+    def packet_anomaly_model_path(self) -> Path:
+        return self.SUPERVISED_MODEL_DIR / "packet_anomaly_isolation_forest.joblib"
+
+    @property
     def clustering_model_path(self) -> Path:
         return self.UNSUPERVISED_MODEL_DIR / "clustering_model.joblib"
 
