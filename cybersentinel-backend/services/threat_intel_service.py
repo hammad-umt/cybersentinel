@@ -37,8 +37,9 @@ URL_POLL_INTERVAL_SECONDS = 2.0
 class ThreatIntelService:
     """Fetches and caches external IP threat intelligence."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, user_id: str):
         self.db = db
+        self.user_id = user_id
 
     async def check_ip(self, ip: str) -> IPIntelResult:
         """Query AbuseIPDB and GeoIP for an IP address, using a 24-hour cache."""
@@ -284,7 +285,10 @@ class ThreatIntelService:
 
     async def _get_fresh_ip_cache(self, ip: str) -> IPReputationCache | None:
         row = (await self.db.execute(
-            select(IPReputationCache).where(IPReputationCache.ip_address == ip)
+            select(IPReputationCache).where(
+                IPReputationCache.user_id == self.user_id,
+                IPReputationCache.ip_address == ip,
+            )
         )).scalar_one_or_none()
         if row and _is_fresh(row.looked_up_at):
             return row
@@ -297,6 +301,7 @@ class ThreatIntelService:
     ) -> VirusScanCache | None:
         row = (await self.db.execute(
             select(VirusScanCache).where(
+                VirusScanCache.user_id == self.user_id,
                 VirusScanCache.lookup_key == lookup_key,
                 VirusScanCache.scan_type == scan_type,
             )
@@ -315,10 +320,13 @@ class ThreatIntelService:
         looked_up_at: str,
     ) -> IPReputationCache:
         row = (await self.db.execute(
-            select(IPReputationCache).where(IPReputationCache.ip_address == ip)
+            select(IPReputationCache).where(
+                IPReputationCache.user_id == self.user_id,
+                IPReputationCache.ip_address == ip,
+            )
         )).scalar_one_or_none()
         if row is None:
-            row = IPReputationCache(ip_address=ip)
+            row = IPReputationCache(user_id=self.user_id, ip_address=ip)
             self.db.add(row)
 
         asn, as_org = _parse_as_field(geo_data.get("as"))
@@ -393,12 +401,13 @@ class ThreatIntelService:
     ) -> VirusScanCache:
         row = (await self.db.execute(
             select(VirusScanCache).where(
+                VirusScanCache.user_id == self.user_id,
                 VirusScanCache.lookup_key == lookup_key,
                 VirusScanCache.scan_type == scan_type,
             )
         )).scalar_one_or_none()
         if row is None:
-            row = VirusScanCache(lookup_key=lookup_key, scan_type=scan_type)
+            row = VirusScanCache(user_id=self.user_id, lookup_key=lookup_key, scan_type=scan_type)
             self.db.add(row)
 
         row.scan_type = scan_type

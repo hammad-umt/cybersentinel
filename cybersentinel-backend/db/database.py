@@ -86,6 +86,15 @@ async def _ensure_column_migrations(conn) -> None:
         await _ensure_postgres_migrations(conn)
 
 
+_TENANT_TABLES = (
+    "packet_events",
+    "firewall_alerts",
+    "response_actions",
+    "virus_scan_cache",
+    "ip_reputation_cache",
+)
+
+
 async def _ensure_sqlite_migrations(conn) -> None:
     columns = {
         "ip_reputation_cache": {
@@ -117,8 +126,36 @@ async def _ensure_sqlite_migrations(conn) -> None:
         text("UPDATE users SET email = email || '@cybersentinel.local' WHERE email NOT LIKE '%@%'")
     )
 
+    for table in _TENANT_TABLES:
+        cols = await conn.execute(text(f"PRAGMA table_info({table})"))
+        present = {row[1] for row in cols.fetchall()}
+        if present and "user_id" not in present:
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN user_id VARCHAR(36)"))
+            await conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table}_user_id ON {table}(user_id)"))
+
+    await _backfill_orphan_tenant_rows(conn, postgres=False)
+
 
 async def _ensure_postgres_migrations(conn) -> None:
+    """Lightweight column migrations for Supabase / PostgreSQL (public schema)."""
+    await _ensure_postgres_table_columns(
+        conn,
+        "users",
+        {
+            "password_reset_token_hash": "VARCHAR(64)",
+            "password_reset_expires": "VARCHAR(32)",
+        },
+        renames={"username": "email"},
+    )
+    await _ensure_postgres_table_columns(
+        conn,
+        "ip_reputation_cache",
+        {
+            "asn": "VARCHAR(16)",
+            "as_org": "VARCHAR(256)",
+        },
+    )
+
     result = await conn.execute(
         text(
             "SELECT column_name FROM information_schema.columns "
@@ -126,22 +163,98 @@ async def _ensure_postgres_migrations(conn) -> None:
         )
     )
     user_present = {row[0] for row in result.fetchall()}
-    if not user_present:
+    if user_present and "email" in user_present:
+        await conn.execute(
+            text("UPDATE users SET email = email || '@cybersentinel.local' WHERE email NOT LIKE '%@%'")
+        )
+
+    for table in _TENANT_TABLES:
+        await _ensure_postgres_table_columns(conn, table, {"user_id": "VARCHAR(36)"})
+
+    await _ensure_postgres_tenant_unique_indexes(conn)
+    await _backfill_orphan_tenant_rows(conn, postgres=True)
+
+
+async def _ensure_postgres_table_columns(
+    conn,
+    table: str,
+    columns: dict[str, str],
+    *,
+    renames: dict[str, str] | None = None,
+) -> None:
+    result = await conn.execute(
+        text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = :table"
+        ),
+        {"table": table},
+    )
+    present = {row[0] for row in result.fetchall()}
+    if not present:
         return
 
-    if "username" in user_present and "email" not in user_present:
-        await conn.execute(text("ALTER TABLE users RENAME COLUMN username TO email"))
-        await conn.execute(text("ALTER TABLE users ALTER COLUMN email TYPE VARCHAR(255)"))
-        user_present.remove("username")
-        user_present.add("email")
+    for old_name, new_name in (renames or {}).items():
+        if old_name in present and new_name not in present:
+            await conn.execute(text(f"ALTER TABLE {table} RENAME COLUMN {old_name} TO {new_name}"))
+            if new_name == "email":
+                await conn.execute(text(f"ALTER TABLE {table} ALTER COLUMN {new_name} TYPE VARCHAR(255)"))
+            present.remove(old_name)
+            present.add(new_name)
 
-    if "password_reset_token_hash" not in user_present:
-        await conn.execute(text("ALTER TABLE users ADD COLUMN password_reset_token_hash VARCHAR(64)"))
-    if "password_reset_expires" not in user_present:
-        await conn.execute(text("ALTER TABLE users ADD COLUMN password_reset_expires VARCHAR(32)"))
+    for name, ddl in columns.items():
+        if name not in present:
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
+
+async def _backfill_orphan_tenant_rows(conn, *, postgres: bool) -> None:
+    """Assign legacy rows (user_id IS NULL) to the default admin account."""
+    admin_email = settings.default_admin_email
+    if postgres:
+        admin_row = await conn.execute(
+            text("SELECT id FROM users WHERE email = :email LIMIT 1"),
+            {"email": admin_email},
+        )
+    else:
+        admin_row = await conn.execute(
+            text("SELECT id FROM users WHERE email = :email LIMIT 1"),
+            {"email": admin_email},
+        )
+    row = admin_row.first()
+    if not row:
+        return
+    admin_id = row[0]
+    for table in _TENANT_TABLES:
+        await conn.execute(
+            text(f"UPDATE {table} SET user_id = :admin_id WHERE user_id IS NULL"),
+            {"admin_id": admin_id},
+        )
+
+
+async def _ensure_postgres_tenant_unique_indexes(conn) -> None:
+    """Replace global unique keys with per-user composite indexes on Supabase."""
     await conn.execute(
-        text("UPDATE users SET email = email || '@cybersentinel.local' WHERE email NOT LIKE '%@%'")
+        text(
+            "ALTER TABLE virus_scan_cache "
+            "DROP CONSTRAINT IF EXISTS virus_scan_cache_lookup_key_key"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_virus_scan_cache_user_lookup "
+            "ON virus_scan_cache (user_id, lookup_key, scan_type)"
+        )
+    )
+    await conn.execute(
+        text(
+            "ALTER TABLE ip_reputation_cache "
+            "DROP CONSTRAINT IF EXISTS ip_reputation_cache_ip_address_key"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_ip_reputation_cache_user_ip "
+            "ON ip_reputation_cache (user_id, ip_address)"
+        )
     )
 
 

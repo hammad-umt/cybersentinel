@@ -6,11 +6,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import require_role
+from core.tenant import get_current_user_id
 from db.database import get_db
 from schemas.copilot import CopilotAnswerResponse, CopilotQuestionRequest
 from services.copilot_service import CopilotService
@@ -18,8 +19,11 @@ from services.copilot_service import CopilotService
 router = APIRouter(prefix="/api/v1/copilot", tags=["Security Copilot"])
 
 
-def get_copilot_service(db: AsyncSession = Depends(get_db)) -> CopilotService:
-    return CopilotService(db=db)
+def get_copilot_service(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> CopilotService:
+    return CopilotService(db=db, user_id=get_current_user_id(request))
 
 
 ServiceDep = Annotated[CopilotService, Depends(get_copilot_service)]

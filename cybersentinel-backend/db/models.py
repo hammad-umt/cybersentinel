@@ -60,6 +60,8 @@ class PacketEvent(Base):
         String(36), primary_key=True, default=_new_uuid
     )
 
+    user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+
     # When the packet was classified
     timestamp: Mapped[str] = mapped_column(
         String(32), default=_now_utc, index=True, nullable=False
@@ -95,6 +97,7 @@ class PacketEvent(Base):
     )  # single | batch | realtime
 
     __table_args__ = (
+        Index("ix_packet_events_user_timestamp", "user_id", "timestamp"),
         Index("ix_packet_events_prediction_timestamp", "prediction", "timestamp"),
     )
 
@@ -117,6 +120,8 @@ class FirewallAlert(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=_new_uuid
     )
+
+    user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
 
     timestamp: Mapped[str] = mapped_column(
         String(32), default=_now_utc, index=True, nullable=False
@@ -157,6 +162,7 @@ class FirewallAlert(Base):
     source_session: Mapped[str | None] = mapped_column(String(128))
 
     __table_args__ = (
+        Index("ix_firewall_alerts_user_timestamp", "user_id", "timestamp"),
         Index("ix_firewall_alerts_severity_timestamp", "severity", "timestamp"),
         Index("ix_firewall_alerts_src_ip_timestamp", "src_ip", "timestamp"),
     )
@@ -181,9 +187,11 @@ class VirusScanCache(Base):
         String(36), primary_key=True, default=_new_uuid
     )
 
+    user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+
     # SHA-256 hash for files, raw URL for URL scans
     lookup_key: Mapped[str] = mapped_column(
-        String(256), unique=True, index=True, nullable=False
+        String(256), index=True, nullable=False
     )
 
     scan_type: Mapped[str] = mapped_column(String(10), nullable=False)  # file | url
@@ -205,6 +213,16 @@ class VirusScanCache(Base):
     # Full VT response stored as JSON string for the Flutter detail view
     raw_result_json: Mapped[str | None] = mapped_column(Text)
 
+    __table_args__ = (
+        Index(
+            "ix_virus_scan_cache_user_lookup",
+            "user_id",
+            "lookup_key",
+            "scan_type",
+            unique=True,
+        ),
+    )
+
     def __repr__(self) -> str:
         return (
             f"<VirusScanCache key={self.lookup_key!r} "
@@ -224,8 +242,10 @@ class IPReputationCache(Base):
         String(36), primary_key=True, default=_new_uuid
     )
 
+    user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+
     ip_address: Mapped[str] = mapped_column(
-        String(45), unique=True, index=True, nullable=False
+        String(45), index=True, nullable=False
     )
 
     looked_up_at: Mapped[str] = mapped_column(
@@ -254,6 +274,10 @@ class IPReputationCache(Base):
     # Full response JSON for the Flutter IP detail view
     raw_result_json: Mapped[str | None] = mapped_column(Text)
 
+    __table_args__ = (
+        Index("ix_ip_reputation_cache_user_ip", "user_id", "ip_address", unique=True),
+    )
+
     def __repr__(self) -> str:
         return (
             f"<IPReputationCache ip={self.ip_address!r} "
@@ -275,6 +299,8 @@ class ResponseAction(Base):
         String(36), primary_key=True, default=_new_uuid
     )
 
+    user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+
     timestamp: Mapped[str] = mapped_column(
         String(32), default=_now_utc, index=True, nullable=False
     )
@@ -295,6 +321,7 @@ class ResponseAction(Base):
     executed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
     __table_args__ = (
+        Index("ix_response_actions_user_timestamp", "user_id", "timestamp"),
         Index("ix_response_actions_target_timestamp", "target_ip", "timestamp"),
     )
 

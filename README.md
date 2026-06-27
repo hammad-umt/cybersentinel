@@ -1,4 +1,4 @@
-# CyberSentinel ML Model
+﻿# CyberSentinel ML Model
 
 CyberSentinel is an FYP cybersecurity backend and ML workspace. It contains:
 
@@ -32,3 +32,11 @@ To reproduce model artifacts:
 - Unsupervised: train using `unsupervised_learning/train.py`.
 
 If trained artifacts are needed in deployment, store them outside GitHub or use Git LFS/release assets.
+
+## Docker / AWS
+
+```powershell
+docker compose up --build
+```
+
+See `cybersentinel-backend/DEPLOY.md` for ECS Fargate + ECR deployment.

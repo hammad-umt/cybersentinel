@@ -19,11 +19,12 @@ from services.threat_scoring_service import ThreatScoringService
 
 
 class CopilotService:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, user_id: str):
         self.db = db
+        self.user_id = user_id
 
     async def answer(self, request: CopilotQuestionRequest) -> CopilotAnswerResponse:
-        retriever = CopilotRetriever(self.db)
+        retriever = CopilotRetriever(self.db, self.user_id)
         chunks = await retriever.retrieve(request.question)
         llm_answer = await maybe_llm_answer(request.question, chunks)
         if llm_answer:
@@ -44,24 +45,26 @@ class CopilotService:
     async def _answer_for_ip(self, question: str, ip: str) -> CopilotAnswerResponse:
         packets = (await self.db.execute(
             select(PacketEvent)
-            .where(PacketEvent.src_ip == ip)
+            .where(PacketEvent.user_id == self.user_id, PacketEvent.src_ip == ip)
             .order_by(PacketEvent.timestamp.desc())
             .limit(10)
         )).scalars().all()
         alerts = (await self.db.execute(
             select(FirewallAlert)
-            .where(FirewallAlert.src_ip == ip)
+            .where(FirewallAlert.user_id == self.user_id, FirewallAlert.src_ip == ip)
             .order_by(FirewallAlert.timestamp.desc())
             .limit(10)
         )).scalars().all()
         actions = (await self.db.execute(
             select(ResponseAction)
-            .where(ResponseAction.target_ip == ip)
+            .where(ResponseAction.user_id == self.user_id, ResponseAction.target_ip == ip)
             .order_by(ResponseAction.timestamp.desc())
             .limit(5)
         )).scalars().all()
 
-        score = await ThreatScoringService(self.db).score(ip, {"source": "copilot", "question": question})
+        score = await ThreatScoringService(self.db, self.user_id).score(
+            ip, {"source": "copilot", "question": question}
+        )
         latest_alert = alerts[0] if alerts else None
 
         if latest_alert:
@@ -96,11 +99,13 @@ class CopilotService:
     async def _answer_global(self, question: str) -> CopilotAnswerResponse:
         alerts = (await self.db.execute(
             select(FirewallAlert)
+            .where(FirewallAlert.user_id == self.user_id)
             .order_by(FirewallAlert.threat_score.desc(), FirewallAlert.timestamp.desc())
             .limit(5)
         )).scalars().all()
         packets = (await self.db.execute(
             select(PacketEvent)
+            .where(PacketEvent.user_id == self.user_id)
             .order_by(PacketEvent.timestamp.desc())
             .limit(5)
         )).scalars().all()

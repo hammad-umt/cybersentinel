@@ -23,8 +23,9 @@ class RetrievedChunk:
 
 
 class CopilotRetriever:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, user_id: str):
         self.db = db
+        self.user_id = user_id
         self._vectorizer = TfidfVectorizer(stop_words="english", max_features=5000)
         self._matrix = None
         self._chunks: list[RetrievedChunk] = []
@@ -32,13 +33,22 @@ class CopilotRetriever:
     async def build_index(self) -> None:
         chunks: list[RetrievedChunk] = []
         packets = (await self.db.execute(
-            select(PacketEvent).order_by(PacketEvent.timestamp.desc()).limit(100)
+            select(PacketEvent)
+            .where(PacketEvent.user_id == self.user_id)
+            .order_by(PacketEvent.timestamp.desc())
+            .limit(100)
         )).scalars().all()
         alerts = (await self.db.execute(
-            select(FirewallAlert).order_by(FirewallAlert.timestamp.desc()).limit(100)
+            select(FirewallAlert)
+            .where(FirewallAlert.user_id == self.user_id)
+            .order_by(FirewallAlert.timestamp.desc())
+            .limit(100)
         )).scalars().all()
         actions = (await self.db.execute(
-            select(ResponseAction).order_by(ResponseAction.timestamp.desc()).limit(50)
+            select(ResponseAction)
+            .where(ResponseAction.user_id == self.user_id)
+            .order_by(ResponseAction.timestamp.desc())
+            .limit(50)
         )).scalars().all()
 
         for event in packets:

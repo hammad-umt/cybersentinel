@@ -24,21 +24,24 @@ from services.threat_scoring_service import ThreatScoringService
 
 
 class ReportService:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, user_id: str):
         self.db = db
+        self.user_id = user_id
 
     async def summary_pdf(self) -> bytes:
-        dashboard = await DashboardService(self.db).summary()
-        top_threats = await ThreatScoringService(self.db).top(limit=10)
+        dashboard = await DashboardService(self.db, self.user_id).summary()
+        top_threats = await ThreatScoringService(self.db, self.user_id).top(limit=10)
 
         recent_alerts = (await self.db.execute(
             select(FirewallAlert)
+            .where(FirewallAlert.user_id == self.user_id)
             .order_by(FirewallAlert.timestamp.desc())
             .limit(20)
         )).scalars().all()
 
         response_actions = (await self.db.execute(
             select(ResponseAction)
+            .where(ResponseAction.user_id == self.user_id)
             .order_by(ResponseAction.timestamp.desc())
             .limit(20)
         )).scalars().all()

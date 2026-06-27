@@ -6,11 +6,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import require_role
+from core.tenant import get_current_user_id
 from db.database import get_db
 from schemas.response import (
     ResponseActionRequest,
@@ -22,8 +23,11 @@ from services.response_service import ResponseService
 router = APIRouter(prefix="/api/v1/response", tags=["Threat Response Center"])
 
 
-def get_response_service(db: AsyncSession = Depends(get_db)) -> ResponseService:
-    return ResponseService(db=db)
+def get_response_service(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseService:
+    return ResponseService(db=db, user_id=get_current_user_id(request))
 
 
 ServiceDep = Annotated[ResponseService, Depends(get_response_service)]

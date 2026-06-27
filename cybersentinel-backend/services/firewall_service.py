@@ -52,9 +52,10 @@ class FirewallService:
         response = await service.analyze_file(file_bytes, filename)
     """
 
-    def __init__(self, registry: ModelRegistry, db: AsyncSession):
+    def __init__(self, registry: ModelRegistry, db: AsyncSession, user_id: str):
         self.registry = registry
         self.db = db
+        self.user_id = user_id
 
     # ------------------------------------------------------------------
     # Public API — called by routers
@@ -134,10 +135,23 @@ class FirewallService:
         page_size = min(page_size, settings.MAX_PAGE_SIZE)
         offset = (page - 1) * page_size
 
-        query = select(FirewallAlert).order_by(FirewallAlert.threat_score.desc())
-        count_query = select(func.count()).select_from(FirewallAlert)
-        unack_query = select(func.count()).select_from(FirewallAlert).where(
-            FirewallAlert.acknowledged == False  # noqa: E712
+        query = (
+            select(FirewallAlert)
+            .where(FirewallAlert.user_id == self.user_id)
+            .order_by(FirewallAlert.threat_score.desc())
+        )
+        count_query = (
+            select(func.count())
+            .select_from(FirewallAlert)
+            .where(FirewallAlert.user_id == self.user_id)
+        )
+        unack_query = (
+            select(func.count())
+            .select_from(FirewallAlert)
+            .where(
+                FirewallAlert.user_id == self.user_id,
+                FirewallAlert.acknowledged == False,  # noqa: E712
+            )
         )
 
         internal_filter = public_to_firewall_severity(severity_filter) if severity_filter else None
@@ -178,7 +192,11 @@ class FirewallService:
         unacknowledged_only: bool = False,
     ) -> list[FirewallAlert]:
         """Return all firewall alerts matching the export filters."""
-        query = select(FirewallAlert).order_by(FirewallAlert.threat_score.desc())
+        query = (
+            select(FirewallAlert)
+            .where(FirewallAlert.user_id == self.user_id)
+            .order_by(FirewallAlert.threat_score.desc())
+        )
 
         internal_filter = public_to_firewall_severity(severity_filter) if severity_filter else None
         if severity_filter and internal_filter is None:
@@ -196,7 +214,10 @@ class FirewallService:
     async def acknowledge_alert(self, alert_id: str) -> AckResponse:
         """Mark one alert as acknowledged by the admin in Flutter."""
         result = await self.db.execute(
-            select(FirewallAlert).where(FirewallAlert.id == alert_id)
+            select(FirewallAlert).where(
+                FirewallAlert.id == alert_id,
+                FirewallAlert.user_id == self.user_id,
+            )
         )
         alert = result.scalar_one_or_none()
         if alert is None:
@@ -259,6 +280,7 @@ class FirewallService:
         saved = []
         for signal in signals:
             alert = FirewallAlert(
+                user_id=self.user_id,
                 src_ip=signal.src_ip,
                 threat_score=signal.threat_score,
                 anomaly_score=signal.anomaly_score,

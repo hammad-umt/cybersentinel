@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.severity import translate_firewall_severity
 from db.models import FirewallAlert, IPReputationCache, PacketEvent, ResponseAction
+from db.sql_compat import iso_day_bucket
 from schemas.dashboard import (
     DashboardSummary,
     GeoBucket,
@@ -23,8 +24,9 @@ from schemas.dashboard import (
 
 
 class DashboardService:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, user_id: str):
         self.db = db
+        self.user_id = user_id
 
     async def summary(self) -> DashboardSummary:
         packet_events = await self._count(PacketEvent)
@@ -32,21 +34,34 @@ class DashboardService:
         response_actions = await self._count(ResponseAction)
 
         unacknowledged_alerts = (await self.db.execute(
-            select(func.count()).select_from(FirewallAlert).where(FirewallAlert.acknowledged == False)  # noqa: E712
+            select(func.count())
+            .select_from(FirewallAlert)
+            .where(
+                FirewallAlert.user_id == self.user_id,
+                FirewallAlert.acknowledged == False,  # noqa: E712
+            )
         )).scalar_one()
         critical_alerts = (await self.db.execute(
-            select(func.count()).select_from(FirewallAlert).where(FirewallAlert.severity == "Critical")
+            select(func.count())
+            .select_from(FirewallAlert)
+            .where(
+                FirewallAlert.user_id == self.user_id,
+                FirewallAlert.severity == "Critical",
+            )
         )).scalar_one()
 
         avg_packet = (await self.db.execute(
             select(func.avg(PacketEvent.threat_score_contribution))
+            .where(PacketEvent.user_id == self.user_id)
         )).scalar_one()
         max_firewall = (await self.db.execute(
             select(func.max(FirewallAlert.threat_score))
+            .where(FirewallAlert.user_id == self.user_id)
         )).scalar_one()
 
         severity_rows = (await self.db.execute(
             select(FirewallAlert.severity, func.count())
+            .where(FirewallAlert.user_id == self.user_id)
             .group_by(FirewallAlert.severity)
             .order_by(desc(func.count()))
         )).all()
@@ -56,32 +71,44 @@ class DashboardService:
             severity_counts[public_label] = severity_counts.get(public_label, 0) + int(count)
         protocol_rows = (await self.db.execute(
             select(PacketEvent.protocol, func.count())
-            .where(PacketEvent.protocol.is_not(None))
+            .where(PacketEvent.user_id == self.user_id, PacketEvent.protocol.is_not(None))
             .group_by(PacketEvent.protocol)
             .order_by(desc(func.count()))
             .limit(10)
         )).all()
         recent_rows = (await self.db.execute(
             select(FirewallAlert)
+            .where(FirewallAlert.user_id == self.user_id)
             .order_by(FirewallAlert.timestamp.desc())
             .limit(10)
         )).scalars().all()
 
         cutoff = (datetime.now(timezone.utc) - timedelta(days=settings.DASHBOARD_TREND_DAYS)).isoformat()
+        day_bucket = iso_day_bucket(FirewallAlert.timestamp)
         trend_rows = (await self.db.execute(
             select(
-                func.substr(FirewallAlert.timestamp, 1, 10),
+                day_bucket,
                 func.count(),
                 func.avg(FirewallAlert.threat_score),
             )
-            .where(FirewallAlert.timestamp >= cutoff)
-            .group_by(func.substr(FirewallAlert.timestamp, 1, 10))
-            .order_by(func.substr(FirewallAlert.timestamp, 1, 10))
+            .where(
+                FirewallAlert.user_id == self.user_id,
+                FirewallAlert.timestamp >= cutoff,
+            )
+            .group_by(day_bucket)
+            .order_by(day_bucket)
         )).all()
         geo_rows = (await self.db.execute(
             select(IPReputationCache.country_code, func.count())
-            .join(FirewallAlert, FirewallAlert.src_ip == IPReputationCache.ip_address)
-            .where(IPReputationCache.country_code.is_not(None))
+            .join(
+                FirewallAlert,
+                (FirewallAlert.src_ip == IPReputationCache.ip_address)
+                & (FirewallAlert.user_id == IPReputationCache.user_id),
+            )
+            .where(
+                IPReputationCache.user_id == self.user_id,
+                IPReputationCache.country_code.is_not(None),
+            )
             .group_by(IPReputationCache.country_code)
             .order_by(desc(func.count()))
             .limit(20)
@@ -133,4 +160,12 @@ class DashboardService:
         )
 
     async def _count(self, model: type) -> int:
-        return int((await self.db.execute(select(func.count()).select_from(model))).scalar_one())
+        return int(
+            (
+                await self.db.execute(
+                    select(func.count())
+                    .select_from(model)
+                    .where(model.user_id == self.user_id)
+                )
+            ).scalar_one()
+        )

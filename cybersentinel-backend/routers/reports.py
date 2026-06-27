@@ -8,12 +8,13 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import require_role
+from core.tenant import get_current_user_id
 from db.database import get_db
 from services.report_service import ReportService
 
@@ -24,8 +25,11 @@ router = APIRouter(
 )
 
 
-def get_report_service(db: AsyncSession = Depends(get_db)) -> ReportService:
-    return ReportService(db=db)
+def get_report_service(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> ReportService:
+    return ReportService(db=db, user_id=get_current_user_id(request))
 
 
 ReportServiceDep = Annotated[ReportService, Depends(get_report_service)]

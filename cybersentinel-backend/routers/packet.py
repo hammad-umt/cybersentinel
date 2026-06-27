@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.security import require_role
+from core.tenant import get_current_user_id
 from db.database import get_db
 from models.loader import ModelNotAvailableError
 from schemas.packet import (
@@ -45,7 +46,11 @@ def get_packet_service(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> PacketService:
-    return PacketService(registry=request.app.state.models, db=db)
+    return PacketService(
+        registry=request.app.state.models,
+        db=db,
+        user_id=get_current_user_id(request),
+    )
 
 
 ServiceDep = Annotated[PacketService, Depends(get_packet_service)]

@@ -2,12 +2,19 @@ name: Backend Tests
 
 on:
   push:
+    branches: [backend, main]
     paths:
       - "cybersentinel-backend/**"
+      - "supervised_learning/**"
+      - "unsupervised_learning/**"
+      - "Dockerfile"
       - ".github/workflows/backend-tests.yml"
   pull_request:
     paths:
       - "cybersentinel-backend/**"
+      - "supervised_learning/**"
+      - "unsupervised_learning/**"
+      - "Dockerfile"
       - ".github/workflows/backend-tests.yml"
 
 jobs:
@@ -20,6 +27,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -32,4 +41,31 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run test suite
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///:memory:
+          JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long
+          ALLOW_PUBLIC_SIGNUP: "true"
+          USE_API_KEY_AUTH: "false"
         run: python -m pytest tests/ -v --tb=short
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: pytest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: cybersentinel-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

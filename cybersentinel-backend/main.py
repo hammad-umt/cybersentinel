@@ -21,6 +21,7 @@ from loguru import logger
 from core.config import settings
 from core.openapi import configure_openapi
 from core.security import enforce_read_only_analyst, require_role, resolve_request_role
+from services.auth_service import decode_access_token
 from db.database import AsyncSessionLocal, check_database, create_tables, engine
 from models.loader import ModelRegistry
 from routers.auth import router as auth_router
@@ -131,6 +132,12 @@ async def api_auth_middleware(request: Request, call_next):
                 },
             )
         request.state.auth_role = role
+        authorization = request.headers.get("Authorization")
+        if authorization and authorization.lower().startswith("bearer "):
+            token = authorization.split(" ", 1)[1].strip()
+            payload = decode_access_token(token)
+            if payload and payload.get("sub"):
+                request.state.user_id = str(payload["sub"])
 
     response = await call_next(request)
     return response

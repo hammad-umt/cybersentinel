@@ -10,11 +10,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import require_role
+from core.tenant import get_current_user_id
 from db.database import get_db
 from schemas.auth import ThreatQueueRequest, ThreatQueueResponse
 from schemas.threat_score import TopThreatsResponse, UnifiedThreatScore
@@ -24,9 +25,10 @@ router = APIRouter(prefix="/api/v1/threat", tags=["Unified Threat Scoring"])
 
 
 def get_threat_scoring_service(
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ThreatScoringService:
-    return ThreatScoringService(db=db)
+    return ThreatScoringService(db=db, user_id=get_current_user_id(request))
 
 
 ServiceDep = Annotated[ThreatScoringService, Depends(get_threat_scoring_service)]
@@ -41,16 +43,18 @@ ServiceDep = Annotated[ThreatScoringService, Depends(get_threat_scoring_service)
 async def queue_ip_analysis(
     body: ThreatQueueRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
 ) -> ThreatQueueResponse:
     from db.database import AsyncSessionLocal
 
+    user_id = get_current_user_id(request)
     cleaned = [ip.strip() for ip in body.ips if ip.strip()]
     if not cleaned:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No valid IP addresses provided.")
 
     async def run_queue():
         async with AsyncSessionLocal() as db:
-            service = ThreatScoringService(db=db)
+            service = ThreatScoringService(db=db, user_id=user_id)
             for ip in cleaned:
                 try:
                     await service.score(ip, {"source": "queue"})

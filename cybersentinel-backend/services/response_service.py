@@ -22,8 +22,9 @@ from schemas.response import (
 
 
 class ResponseService:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, user_id: str):
         self.db = db
+        self.user_id = user_id
 
     async def create_action(self, request: ResponseActionRequest) -> ResponseActionResponse:
         command_preview = _command_preview(request.action, request.target_ip)
@@ -57,6 +58,7 @@ class ResponseService:
             message = output or error or f"Command exited with code {completed.returncode}"
 
         row = ResponseAction(
+            user_id=self.user_id,
             target_ip=request.target_ip,
             action=request.action,
             status=status,
@@ -74,10 +76,13 @@ class ResponseService:
     async def list_actions(self, page: int, page_size: int) -> ResponseActionsResponse:
         offset = (page - 1) * page_size
         total = (await self.db.execute(
-            select(func.count()).select_from(ResponseAction)
+            select(func.count())
+            .select_from(ResponseAction)
+            .where(ResponseAction.user_id == self.user_id)
         )).scalar_one()
         rows = (await self.db.execute(
             select(ResponseAction)
+            .where(ResponseAction.user_id == self.user_id)
             .order_by(ResponseAction.timestamp.desc())
             .offset(offset)
             .limit(page_size)

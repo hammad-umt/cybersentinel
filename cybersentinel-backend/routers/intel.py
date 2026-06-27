@@ -8,12 +8,13 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.security import require_role
+from core.tenant import get_current_user_id
 from db.database import get_db
 from schemas.threat_intel import URLScanRequest, VTResult
 from services.threat_intel_service import ThreatIntelService
@@ -21,8 +22,11 @@ from services.threat_intel_service import ThreatIntelService
 router = APIRouter(prefix="/api/v1/intel", tags=["Threat Intelligence"])
 
 
-def get_threat_intel_service(db: AsyncSession = Depends(get_db)) -> ThreatIntelService:
-    return ThreatIntelService(db=db)
+def get_threat_intel_service(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> ThreatIntelService:
+    return ThreatIntelService(db=db, user_id=get_current_user_id(request))
 
 
 IntelServiceDep = Annotated[ThreatIntelService, Depends(get_threat_intel_service)]

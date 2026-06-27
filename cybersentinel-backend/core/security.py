@@ -12,7 +12,6 @@ from core.config import settings
 from services.auth_service import decode_access_token
 
 Role = Literal["admin", "analyst", "manager", "user"]
-AuthRole = Role
 
 READ_METHODS = {"GET", "HEAD", "OPTIONS"}
 

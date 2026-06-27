@@ -24,15 +24,16 @@ from services.threat_intel_service import ThreatIntelService
 class ThreatScoringService:
     """Computes weighted ensemble threat scores for IP addresses."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, user_id: str):
         self.db = db
-        self.intel = ThreatIntelService(db=db)
+        self.user_id = user_id
+        self.intel = ThreatIntelService(db=db, user_id=user_id)
 
     async def score(self, ip: str, src_context: dict) -> UnifiedThreatScore:
         """Compute packet, anomaly, and intel scores for one IP address."""
         packet_events = (await self.db.execute(
             select(PacketEvent)
-            .where(PacketEvent.src_ip == ip)
+            .where(PacketEvent.user_id == self.user_id, PacketEvent.src_ip == ip)
             .order_by(PacketEvent.timestamp.desc())
             .limit(50)
         )).scalars().all()
@@ -41,7 +42,7 @@ class ThreatScoringService:
 
         firewall_alerts = (await self.db.execute(
             select(FirewallAlert)
-            .where(FirewallAlert.src_ip == ip)
+            .where(FirewallAlert.user_id == self.user_id, FirewallAlert.src_ip == ip)
             .order_by(FirewallAlert.timestamp.desc())
             .limit(10)
         )).scalars().all()
@@ -96,10 +97,14 @@ class ThreatScoringService:
     async def top(self, limit: int = 20) -> TopThreatsResponse:
         """Return top IPs discovered in packet events and firewall alerts."""
         packet_ips = (await self.db.execute(
-            select(PacketEvent.src_ip).where(PacketEvent.src_ip.is_not(None)).distinct()
+            select(PacketEvent.src_ip)
+            .where(PacketEvent.user_id == self.user_id, PacketEvent.src_ip.is_not(None))
+            .distinct()
         )).scalars().all()
         firewall_ips = (await self.db.execute(
-            select(FirewallAlert.src_ip).where(FirewallAlert.src_ip.is_not(None)).distinct()
+            select(FirewallAlert.src_ip)
+            .where(FirewallAlert.user_id == self.user_id, FirewallAlert.src_ip.is_not(None))
+            .distinct()
         )).scalars().all()
 
         candidates = sorted({ip for ip in [*packet_ips, *firewall_ips] if ip})

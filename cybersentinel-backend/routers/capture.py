@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.security import require_role
+from core.tenant import get_current_user_id
 from db.database import get_db
 from schemas.capture import CapturedPacketsResponse, CaptureStartRequest, CaptureStatusResponse, InterfacesResponse
 from services.packet_capture_service import PacketCaptureService
@@ -32,7 +33,11 @@ def get_capture_service(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> PacketCaptureService:
-    return PacketCaptureService(registry=request.app.state.models, db=db)
+    return PacketCaptureService(
+        registry=request.app.state.models,
+        db=db,
+        user_id=get_current_user_id(request),
+    )
 
 
 ServiceDep = Annotated[PacketCaptureService, Depends(get_capture_service)]

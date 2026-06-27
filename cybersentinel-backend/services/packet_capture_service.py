@@ -61,32 +61,52 @@ DEFAULT_WINDOWS_FW_LOG = Path(
 )
 
 # ---------------------------------------------------------------------------
-# Global capture state — one capture session at a time
+# Per-user capture / monitor state (isolated by authenticated user_id)
 # ---------------------------------------------------------------------------
-_capture_state: Dict[str, Any] = {
-    "running": False,
-    "engine": None,
-    "interface": None,
-    "started_at": None,
-    "packets": deque(maxlen=10000),
-    "stop_event": None,
-    "thread": None,
-}
+_app_event_loop: asyncio.AbstractEventLoop | None = None
+_capture_sessions: Dict[str, Dict[str, Any]] = {}
+_fw_monitor_sessions: Dict[str, Dict[str, Any]] = {}
 
-_fw_monitor_state: Dict[str, Any] = {
-    "running": False,
-    "log_path": None,
-    "lines_processed": 0,
-    "alerts_generated": 0,
-    "stop_event": None,
-    "thread": None,
-    "loop": None,
-}
+
+def _new_capture_state() -> Dict[str, Any]:
+    return {
+        "running": False,
+        "engine": None,
+        "interface": None,
+        "started_at": None,
+        "packets": deque(maxlen=10000),
+        "stop_event": None,
+        "thread": None,
+    }
+
+
+def _new_fw_monitor_state() -> Dict[str, Any]:
+    return {
+        "running": False,
+        "log_path": None,
+        "lines_processed": 0,
+        "alerts_generated": 0,
+        "stop_event": None,
+        "thread": None,
+    }
+
+
+def _capture_state_for(user_id: str) -> Dict[str, Any]:
+    if user_id not in _capture_sessions:
+        _capture_sessions[user_id] = _new_capture_state()
+    return _capture_sessions[user_id]
+
+
+def _fw_monitor_state_for(user_id: str) -> Dict[str, Any]:
+    if user_id not in _fw_monitor_sessions:
+        _fw_monitor_sessions[user_id] = _new_fw_monitor_state()
+    return _fw_monitor_sessions[user_id]
 
 
 def set_background_event_loop(loop: asyncio.AbstractEventLoop) -> None:
     """Store FastAPI's running event loop for background thread callbacks."""
-    _fw_monitor_state["loop"] = loop
+    global _app_event_loop
+    _app_event_loop = loop
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +229,7 @@ def _scapy_capture_thread(
     bpf_filter: Optional[str],
     stop_event: threading.Event,
     registry: ModelRegistry,
+    user_id: str,
 ) -> None:
     """
     Runs in a background thread.
@@ -252,7 +273,7 @@ def _scapy_capture_thread(
                 flow["dst_port"] = udp.dport
 
             features = _extract_scapy_features(pkt, flow)
-            _classify_store_and_score_flow(flow, features, registry)
+            _classify_store_and_score_flow(flow, features, registry, user_id=user_id)
 
         logger.info(
             "Scapy capture starting — interface={} limit={} timeout={}s filter={}",
@@ -277,7 +298,7 @@ def _scapy_capture_thread(
     except Exception as exc:
         logger.error("Scapy capture thread error: {}", exc)
     finally:
-        _capture_state["running"] = False
+        _capture_state_for(user_id)["running"] = False
         logger.info("Scapy capture thread stopped.")
 
 
@@ -359,6 +380,7 @@ def _tshark_capture_thread(
     bpf_filter: Optional[str],
     stop_event: threading.Event,
     registry: ModelRegistry,
+    user_id: str,
 ) -> None:
     """Runs TShark as a subprocess and parses one packet per output line."""
     cmd = [
@@ -399,7 +421,7 @@ def _tshark_capture_thread(
                 break
             flow, features = _parse_tshark_fields(line)
             if flow:
-                _classify_store_and_score_flow(flow, features, registry)
+                _classify_store_and_score_flow(flow, features, registry, user_id=user_id)
 
     except FileNotFoundError:
         logger.error(
@@ -409,7 +431,7 @@ def _tshark_capture_thread(
     except Exception as exc:
         logger.error("TShark capture error: {}", exc)
     finally:
-        _capture_state["running"] = False
+        _capture_state_for(user_id)["running"] = False
         logger.info("TShark capture thread stopped.")
 
 
@@ -494,6 +516,8 @@ def _classify_store_and_score_flow(
     features: Dict[str, Any],
     registry: ModelRegistry,
     model_type: str | None = None,
+    *,
+    user_id: str,
 ) -> None:
     """Classify a live packet/flow, keep it in memory, persist it, and score risky IPs."""
     feature_coverage = 0.0
@@ -522,8 +546,8 @@ def _classify_store_and_score_flow(
             logger.debug("Packet classification error: {}", exc)
             flow["prediction"] = "Insufficient Evidence"
 
-    _capture_state["packets"].append(flow)
-    _schedule_packet_persist(flow, feature_coverage)
+    _capture_state_for(user_id)["packets"].append(flow)
+    _schedule_packet_persist(flow, feature_coverage, user_id)
 
 
 def _single_packet_features(
@@ -572,20 +596,24 @@ def _single_packet_features(
     }
 
 
-def _schedule_packet_persist(flow: Dict[str, Any], feature_coverage: float) -> None:
-    loop = _fw_monitor_state.get("loop")
+def _schedule_packet_persist(flow: Dict[str, Any], feature_coverage: float, user_id: str) -> None:
+    loop = _app_event_loop
     if loop is None or not loop.is_running():
         logger.warning("Skipping packet persistence: application event loop is unavailable")
         return
 
-    future = asyncio.run_coroutine_threadsafe(_persist_packet_event(flow, feature_coverage), loop)
+    future = asyncio.run_coroutine_threadsafe(
+        _persist_packet_event(flow, feature_coverage, user_id),
+        loop,
+    )
     future.add_done_callback(_log_background_failure)
 
 
-async def _persist_packet_event(flow: Dict[str, Any], feature_coverage: float) -> None:
+async def _persist_packet_event(flow: Dict[str, Any], feature_coverage: float, user_id: str) -> None:
     async with AsyncSessionLocal() as session:
         try:
             event = PacketEvent(
+                user_id=user_id,
                 timestamp=flow.get("timestamp"),
                 src_ip=flow.get("src_ip"),
                 dst_ip=flow.get("dst_ip"),
@@ -601,7 +629,7 @@ async def _persist_packet_event(flow: Dict[str, Any], feature_coverage: float) -
             )
             session.add(event)
             if _should_score_packet(flow):
-                await ThreatScoringService(db=session).score(
+                await ThreatScoringService(db=session, user_id=user_id).score(
                     str(flow.get("src_ip")),
                     {"source": "live_packet_capture", "packet_id": flow.get("packet_id")},
                 )
@@ -649,6 +677,7 @@ def _firewall_monitor_thread(
     poll_interval: int,
     stop_event: threading.Event,
     registry: ModelRegistry,
+    user_id: str,
 ) -> None:
     """
     Tails pfirewall.log and feeds new lines into the unsupervised pipeline.
@@ -664,7 +693,7 @@ def _firewall_monitor_thread(
             "Properties → Logging → Log dropped/successful connections.",
             log_path,
         )
-        _fw_monitor_state["running"] = False
+        _fw_monitor_state_for(user_id)["running"] = False
         return
 
     # Seek to end of file — only process NEW lines from now on
@@ -676,7 +705,7 @@ def _firewall_monitor_thread(
         logger.error(
             "Permission denied reading {}. Run backend as Administrator.", log_path
         )
-        _fw_monitor_state["running"] = False
+        _fw_monitor_state_for(user_id)["running"] = False
         return
 
     logger.info("Firewall monitor ready — watching for new entries...")
@@ -693,17 +722,17 @@ def _firewall_monitor_thread(
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
-                _fw_monitor_state["lines_processed"] += 1
-                _process_firewall_line(line, registry)
+                _fw_monitor_state_for(user_id)["lines_processed"] += 1
+                _process_firewall_line(line, registry, user_id)
 
         except Exception as exc:
             logger.warning("Firewall monitor read error: {}", exc)
 
-    _fw_monitor_state["running"] = False
+    _fw_monitor_state_for(user_id)["running"] = False
     logger.info("Firewall monitor stopped.")
 
 
-def _process_firewall_line(line: str, registry: ModelRegistry) -> None:
+def _process_firewall_line(line: str, registry: ModelRegistry, user_id: str) -> None:
     """
     Parse one pfirewall.log line and feed it into the unsupervised pipeline.
 
@@ -743,7 +772,7 @@ def _process_firewall_line(line: str, registry: ModelRegistry) -> None:
             results = registry.firewall_pipeline.ingest_realtime(event)
             signals = results.get("threat_signals", [])
             if signals:
-                _fw_monitor_state["alerts_generated"] += len(signals)
+                _fw_monitor_state_for(user_id)["alerts_generated"] += len(signals)
                 for sig in signals:
                     signal_ip = sig.get("src_ip")
                     logger.warning(
@@ -753,31 +782,31 @@ def _process_firewall_line(line: str, registry: ModelRegistry) -> None:
                         sig.get("threat_score"),
                     )
                     if signal_ip:
-                        _schedule_unified_score(str(signal_ip), sig)
+                        _schedule_unified_score(str(signal_ip), sig, user_id)
 
     except Exception as exc:
         logger.debug("Could not parse firewall line: {} - {}", line[:80], exc)
 
 
-def _schedule_unified_score(ip: str, evidence: Dict[str, Any]) -> None:
+def _schedule_unified_score(ip: str, evidence: Dict[str, Any], user_id: str) -> None:
     """Schedule unified scoring on the FastAPI event loop from this thread."""
-    loop = _fw_monitor_state.get("loop")
+    loop = _app_event_loop
     if loop is None or not loop.is_running():
         logger.warning("Skipping unified scoring for {}: application event loop is unavailable", ip)
         return
 
-    future = asyncio.run_coroutine_threadsafe(_score_firewall_signal(ip, evidence), loop)
+    future = asyncio.run_coroutine_threadsafe(_score_firewall_signal(ip, evidence, user_id), loop)
     try:
         future.result(timeout=30)
     except Exception as exc:
         logger.warning("Unified scoring failed for {}: {}", ip, exc)
 
 
-async def _score_firewall_signal(ip: str, evidence: Dict[str, Any]) -> None:
+async def _score_firewall_signal(ip: str, evidence: Dict[str, Any], user_id: str) -> None:
     """Open a background DB session and log the unified score for a signal."""
     async with AsyncSessionLocal() as session:
         try:
-            score = await ThreatScoringService(db=session).score(ip, evidence)
+            score = await ThreatScoringService(db=session, user_id=user_id).score(ip, evidence)
             await session.commit()
             logger.warning(
                 "Unified threat score for {ip}: {score} ({severity})",
@@ -795,9 +824,16 @@ async def _score_firewall_signal(ip: str, evidence: Dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 class PacketCaptureService:
-    def __init__(self, registry: ModelRegistry, db: AsyncSession):
+    def __init__(self, registry: ModelRegistry, db: AsyncSession, user_id: str):
         self.registry = registry
         self.db = db
+        self.user_id = user_id
+
+    def _capture_state(self) -> Dict[str, Any]:
+        return _capture_state_for(self.user_id)
+
+    def _fw_monitor_state(self) -> Dict[str, Any]:
+        return _fw_monitor_state_for(self.user_id)
 
     # ------------------------------------------------------------------
     # Interfaces
@@ -815,12 +851,13 @@ class PacketCaptureService:
     # ------------------------------------------------------------------
 
     async def start_capture(self, req: CaptureStartRequest) -> CaptureStatusResponse:
-        if _capture_state["running"]:
+        state = self._capture_state()
+        if state["running"]:
             return CaptureStatusResponse(
                 is_running=True,
-                engine=_capture_state["engine"],
-                interface=_capture_state["interface"],
-                packets_captured=len(_capture_state["packets"]),
+                engine=state["engine"],
+                interface=state["interface"],
+                packets_captured=len(state["packets"]),
                 message="Capture already running. Stop it first.",
             )
 
@@ -857,14 +894,14 @@ class PacketCaptureService:
 
         engine = "tshark" if use_tshark else "scapy"
         stop_event = threading.Event()
-        _capture_state.update({
+        state.update({
             "running": True,
             "engine": engine,
             "interface": iface.name,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "stop_event": stop_event,
         })
-        _capture_state["packets"].clear()
+        state["packets"].clear()
 
         target_fn = _tshark_capture_thread if use_tshark else _scapy_capture_thread
         thread = threading.Thread(
@@ -876,10 +913,11 @@ class PacketCaptureService:
                 bpf_filter,
                 stop_event,
                 self.registry,
+                self.user_id,
             ),
             daemon=True,
         )
-        _capture_state["thread"] = thread
+        state["thread"] = thread
         thread.start()
 
         logger.info("Started {} capture on interface '{}'", engine, iface.name)
@@ -888,50 +926,52 @@ class PacketCaptureService:
             engine=engine,
             interface=iface.name,
             packets_captured=0,
-            started_at=_capture_state["started_at"],
+            started_at=state["started_at"],
             message=f"{engine.upper()} capture started on '{iface.name}'.",
         )
 
     async def stop_capture(self) -> CaptureStatusResponse:
-        if not _capture_state["running"]:
+        state = self._capture_state()
+        if not state["running"]:
             return CaptureStatusResponse(
                 is_running=False,
-                packets_captured=len(_capture_state["packets"]),
+                packets_captured=len(state["packets"]),
                 message="No capture is running.",
             )
 
-        stop_event: threading.Event = _capture_state.get("stop_event")
+        stop_event: threading.Event = state.get("stop_event")
         if stop_event:
             stop_event.set()
 
-        _capture_state["running"] = False
-        count = len(_capture_state["packets"])
+        state["running"] = False
+        count = len(state["packets"])
         logger.info("Capture stopped. {} packets captured.", count)
 
         return CaptureStatusResponse(
             is_running=False,
-            engine=_capture_state.get("engine"),
-            interface=_capture_state.get("interface"),
+            engine=state.get("engine"),
+            interface=state.get("interface"),
             packets_captured=count,
-            started_at=_capture_state.get("started_at"),
+            started_at=state.get("started_at"),
             message=f"Capture stopped. {count} packets captured.",
         )
 
     async def get_status(self) -> CaptureStatusResponse:
-        packets = list(_capture_state["packets"])
+        state = self._capture_state()
+        packets = list(state["packets"])
         classified = [p for p in packets if p["prediction"] != "Pending"]
         return CaptureStatusResponse(
-            is_running=_capture_state["running"],
-            engine=_capture_state.get("engine"),
-            interface=_capture_state.get("interface"),
+            is_running=state["running"],
+            engine=state.get("engine"),
+            interface=state.get("interface"),
             packets_captured=len(packets),
             packets_classified=len(classified),
-            started_at=_capture_state.get("started_at"),
-            message="Capture running." if _capture_state["running"] else "Capture stopped.",
+            started_at=state.get("started_at"),
+            message="Capture running." if state["running"] else "Capture stopped.",
         )
 
     async def get_packets(self) -> CapturedPacketsResponse:
-        packets = list(_capture_state["packets"])
+        packets = list(self._capture_state()["packets"])
         results = [CapturedPacketResult(**p) for p in packets]
 
         normal = sum(1 for r in results if r.prediction == "Normal")
@@ -992,7 +1032,13 @@ class PacketCaptureService:
                     flow["src_port"] = udp.sport
                     flow["dst_port"] = udp.dport
                 features = _extract_scapy_features(pkt, flow)
-                _classify_store_and_score_flow(flow, features, self.registry, model_type=model_type)
+                _classify_store_and_score_flow(
+                    flow,
+                    features,
+                    self.registry,
+                    model_type=model_type,
+                    user_id=self.user_id,
+                )
                 processed += 1
         finally:
             reader.close()
@@ -1011,13 +1057,14 @@ class PacketCaptureService:
     async def start_firewall_monitor(self, req: FirewallMonitorRequest) -> FirewallMonitorResponse:
         self.registry.require_firewall_pipeline()
         set_background_event_loop(asyncio.get_running_loop())
+        monitor = self._fw_monitor_state()
 
-        if _fw_monitor_state["running"]:
+        if monitor["running"]:
             return FirewallMonitorResponse(
                 is_running=True,
-                log_path=str(_fw_monitor_state["log_path"]),
-                lines_processed=_fw_monitor_state["lines_processed"],
-                alerts_generated=_fw_monitor_state["alerts_generated"],
+                log_path=str(monitor["log_path"]),
+                lines_processed=monitor["lines_processed"],
+                alerts_generated=monitor["alerts_generated"],
                 message="Firewall monitor already running.",
             )
 
@@ -1039,7 +1086,7 @@ class PacketCaptureService:
             )
 
         stop_event = threading.Event()
-        _fw_monitor_state.update({
+        monitor.update({
             "running": True,
             "log_path": log_path,
             "lines_processed": 0,
@@ -1049,10 +1096,10 @@ class PacketCaptureService:
 
         thread = threading.Thread(
             target=_firewall_monitor_thread,
-            args=(log_path, req.poll_interval_seconds, stop_event, self.registry),
+            args=(log_path, req.poll_interval_seconds, stop_event, self.registry, self.user_id),
             daemon=True,
         )
-        _fw_monitor_state["thread"] = thread
+        monitor["thread"] = thread
         thread.start()
 
         return FirewallMonitorResponse(
@@ -1062,33 +1109,35 @@ class PacketCaptureService:
         )
 
     async def stop_firewall_monitor(self) -> FirewallMonitorResponse:
-        if not _fw_monitor_state["running"]:
+        monitor = self._fw_monitor_state()
+        if not monitor["running"]:
             return FirewallMonitorResponse(
                 is_running=False,
-                log_path=str(_fw_monitor_state.get("log_path", "")),
-                lines_processed=_fw_monitor_state["lines_processed"],
-                alerts_generated=_fw_monitor_state["alerts_generated"],
+                log_path=str(monitor.get("log_path", "")),
+                lines_processed=monitor["lines_processed"],
+                alerts_generated=monitor["alerts_generated"],
                 message="Firewall monitor is not running.",
             )
 
-        stop_event: threading.Event = _fw_monitor_state.get("stop_event")
+        stop_event: threading.Event = monitor.get("stop_event")
         if stop_event:
             stop_event.set()
 
-        _fw_monitor_state["running"] = False
+        monitor["running"] = False
         return FirewallMonitorResponse(
             is_running=False,
-            log_path=str(_fw_monitor_state.get("log_path", "")),
-            lines_processed=_fw_monitor_state["lines_processed"],
-            alerts_generated=_fw_monitor_state["alerts_generated"],
+            log_path=str(monitor.get("log_path", "")),
+            lines_processed=monitor["lines_processed"],
+            alerts_generated=monitor["alerts_generated"],
             message="Firewall monitor stopped.",
         )
 
     async def get_firewall_monitor_status(self) -> FirewallMonitorResponse:
+        monitor = self._fw_monitor_state()
         return FirewallMonitorResponse(
-            is_running=_fw_monitor_state["running"],
-            log_path=str(_fw_monitor_state.get("log_path", "")),
-            lines_processed=_fw_monitor_state["lines_processed"],
-            alerts_generated=_fw_monitor_state["alerts_generated"],
-            message="Monitor running." if _fw_monitor_state["running"] else "Monitor stopped.",
+            is_running=monitor["running"],
+            log_path=str(monitor.get("log_path", "")),
+            lines_processed=monitor["lines_processed"],
+            alerts_generated=monitor["alerts_generated"],
+            message="Monitor running." if monitor["running"] else "Monitor stopped.",
         )

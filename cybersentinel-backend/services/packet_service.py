@@ -94,9 +94,10 @@ class PacketService:
         response = await service.classify_single(request_body)
     """
 
-    def __init__(self, registry: ModelRegistry, db: AsyncSession):
+    def __init__(self, registry: ModelRegistry, db: AsyncSession, user_id: str):
         self.registry = registry
         self.db = db
+        self.user_id = user_id
         self.rule_engine = SOCRuleEngine()
         self.fusion_engine = SOCFusionEngine()
 
@@ -198,8 +199,16 @@ class PacketService:
         page_size = min(page_size, settings.MAX_PAGE_SIZE)
         offset = (page - 1) * page_size
 
-        query = select(PacketEvent).order_by(PacketEvent.timestamp.desc())
-        count_query = select(func.count()).select_from(PacketEvent)
+        query = (
+            select(PacketEvent)
+            .where(PacketEvent.user_id == self.user_id)
+            .order_by(PacketEvent.timestamp.desc())
+        )
+        count_query = (
+            select(func.count())
+            .select_from(PacketEvent)
+            .where(PacketEvent.user_id == self.user_id)
+        )
 
         if prediction_filter:
             query = query.where(PacketEvent.prediction == prediction_filter)
@@ -224,7 +233,11 @@ class PacketService:
         prediction_filter: str | None = None,
     ) -> list[PacketEvent]:
         """Return all packet events matching the export filters."""
-        query = select(PacketEvent).order_by(PacketEvent.timestamp.desc())
+        query = (
+            select(PacketEvent)
+            .where(PacketEvent.user_id == self.user_id)
+            .order_by(PacketEvent.timestamp.desc())
+        )
 
         if prediction_filter:
             query = query.where(PacketEvent.prediction == prediction_filter)
@@ -244,6 +257,7 @@ class PacketService:
     ) -> str:
         """Persist one PacketPrediction to the packet_events table."""
         event = PacketEvent(
+            user_id=self.user_id,
             src_ip=flow.src_ip if flow else None,
             dst_ip=flow.dst_ip if flow else None,
             dst_port=flow.dst_port if flow else None,
@@ -271,7 +285,7 @@ class PacketService:
             return {"score": 0.0}
         query = (
             select(FirewallAlert)
-            .where(FirewallAlert.src_ip == src_ip)
+            .where(FirewallAlert.user_id == self.user_id, FirewallAlert.src_ip == src_ip)
             .order_by(FirewallAlert.timestamp.desc())
             .limit(1)
         )
@@ -286,6 +300,7 @@ class PacketService:
             return 0
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
         query = select(PacketEvent.dst_port).where(
+            PacketEvent.user_id == self.user_id,
             PacketEvent.src_ip == flow.src_ip,
             PacketEvent.timestamp >= cutoff,
         )
