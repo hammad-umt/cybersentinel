@@ -1,10 +1,21 @@
 import 'package:cybersentinel/auth/require_auth.dart';
-import 'package:cybersentinel/services/api_config.dart';
 import 'package:cybersentinel/services/api_service.dart';
 import 'package:cybersentinel/services/auth_service.dart';
+import 'package:cybersentinel/theme/app_colors.dart';
+import 'package:cybersentinel/theme/theme_service.dart';
+import 'package:cybersentinel/widgets/shared/cyber_card.dart';
 import 'package:cybersentinel/widgets/shared/page_header.dart';
 import 'package:cybersentinel/widgets/sidebar_panel.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+/// HCI layout constants — readable width, touch targets, rhythm.
+abstract final class _Hci {
+  static const pagePadding = 32.0;
+  static const sectionGap = 24.0;
+  static const maxContentWidth = 720.0;
+  static const minTouchTarget = 48.0;
+}
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -13,7 +24,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return RequireAuth(
       child: Scaffold(
-        backgroundColor: const Color(0xFF0A0E1A),
+        backgroundColor: AppColors.bg,
         body: SafeArea(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -23,7 +34,7 @@ class SettingsPage extends StatelessWidget {
                 child: Column(
                   children: [
                     buildTopNavbar(context, 'Settings'),
-                    Expanded(child: const SettingsContent()),
+                    const Expanded(child: SettingsContent()),
                   ],
                 ),
               ),
@@ -47,721 +58,634 @@ class _SettingsContentState extends State<SettingsContent> {
   bool emailAlerts = true;
   bool pushNotifications = false;
   String selectedTheme = 'dark';
-
-  final _baseUrlController = TextEditingController();
+  bool _saving = false;
+  bool? _serviceOnline;
 
   @override
   void initState() {
     super.initState();
-    _baseUrlController.text = ApiConfig.baseUrl;
+    selectedTheme = ThemeService.instance.themeName;
+    _checkServiceStatus();
   }
 
-  @override
-  void dispose() {
-    _baseUrlController.dispose();
-    super.dispose();
+  Future<void> _checkServiceStatus() async {
+    try {
+      await ApiService.instance.getHealth();
+      if (mounted) setState(() => _serviceOnline = true);
+    } catch (_) {
+      if (mounted) setState(() => _serviceOnline = false);
+    }
   }
 
   Future<void> _saveSettings() async {
-    await ApiConfig.saveBaseUrl(_baseUrlController.text);
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Settings saved')),
-    );
-
-    // Quick health check
+    setState(() => _saving = true);
     try {
-      await ApiService.instance.getHealth();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Backend connection OK')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved, but backend unreachable: $e')),
-        );
-      }
+      await ThemeService.instance.setFromName(selectedTheme);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            selectedTheme == 'light'
+                ? 'Preferences saved. Light theme is now active.'
+                : 'Preferences saved. Dark theme is now active.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: AppColors.borderElevated),
+        ),
+        title: Text('Sign out?', style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          'You will need to sign in again to access dashboards and security tools.',
+          style: TextStyle(color: AppColors.textMuted, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Sign out', style: TextStyle(color: AppColors.redLight)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await AuthService.instance.logout();
+  }
+
+  String _initials(String email) {
+    if (email.isEmpty) return '?';
+    final local = email.split('@').first;
+    if (local.contains('.')) {
+      final parts = local.split('.');
+      return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+    }
+    return local.length >= 2 ? local.substring(0, 2).toUpperCase() : local[0].toUpperCase();
   }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
-        child: Column(
-          children: [
-            const SizedBox(
-              width: 1000,
-              child: PageHeader(
-                title: 'Settings',
-                subtitle: 'Backend connection, session management, and application preferences.',
-                icon: Icons.settings_outlined,
-              ),
-            ),
-            Container(
-              width: 1000,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F1420),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF2A2F3E)),
-              ),
-              padding: const EdgeInsets.all(24),
+    return ListenableBuilder(
+      listenable: AuthService.instance,
+      builder: (context, _) {
+        final auth = AuthService.instance;
+        final email = auth.email;
+        final role = auth.role;
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(_Hci.pagePadding),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _Hci.maxContentWidth),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.dns, color: Color(0xFF06B6D4)),
-                      SizedBox(width: 8),
-                      Text(
-                        'Backend Connection',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
+                  PageHeader(
+                    title: 'Settings',
+                    subtitle: 'Manage your account, notifications, and how CyberSentinel looks and feels.',
+                    icon: Icons.settings_outlined,
+                  ),
+                  _AccountCard(
+                    initials: _initials(email),
+                    email: email,
+                    role: role,
+                    isOnline: _serviceOnline,
+                    onSignOut: _confirmLogout,
+                  ),
+                  const SizedBox(height: _Hci.sectionGap),
+                  _SettingsSection(
+                    icon: Icons.brightness_4_outlined,
+                    title: 'Appearance',
+                    subtitle: 'Choose a theme that is comfortable for long investigation sessions.',
+                    child: _ThemePicker(
+                      selected: selectedTheme,
+                      onChanged: (v) => setState(() => selectedTheme = v),
+                    ),
+                  ),
+                  const SizedBox(height: _Hci.sectionGap),
+                  _SettingsSection(
+                    icon: Icons.notifications_outlined,
+                    title: 'Notifications',
+                    subtitle: 'Control how and when you are alerted to new threats.',
+                    child: Column(
+                      children: [
+                        _SettingToggle(
+                          title: 'Email alerts',
+                          description: 'Receive a summary when high-severity threats are detected.',
+                          value: emailAlerts,
+                          onChanged: (v) => setState(() => emailAlerts = v),
+                        ),
+                        const SizedBox(height: 12),
+                        _SettingToggle(
+                          title: 'Push notifications',
+                          description: 'Get real-time alerts on this device while the app is open.',
+                          value: pushNotifications,
+                          onChanged: (v) => setState(() => pushNotifications = v),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: _Hci.sectionGap),
+                  _SettingsSection(
+                    icon: Icons.public_outlined,
+                    title: 'Monitoring',
+                    subtitle: 'Background services that keep your environment under watch.',
+                    child: _SettingToggle(
+                      title: 'Background monitoring',
+                      description: 'Continuously analyse network traffic for suspicious activity.',
+                      value: backgroundMonitoring,
+                      onChanged: (v) => setState(() => backgroundMonitoring = v),
+                    ),
+                  ),
+                  const SizedBox(height: _Hci.sectionGap),
+                  _SettingsSection(
+                    icon: Icons.key_outlined,
+                    title: 'Threat intelligence keys',
+                    subtitle: 'Optional integrations for deeper file, URL, and IP lookups.',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _ApiKeyField(
+                          label: 'VirusTotal',
+                          hint: 'Paste your VirusTotal API key',
+                          helper: 'Used for file and URL reputation scans.',
+                        ),
+                        const SizedBox(height: 16),
+                        _ApiKeyField(
+                          label: 'GeoIP',
+                          hint: 'Paste your GeoIP API key',
+                          helper: 'Enriches IP analysis with location data.',
+                        ),
+                        const SizedBox(height: 16),
+                        _ApiKeyField(
+                          label: 'AbuseIPDB',
+                          hint: 'Paste your AbuseIPDB API key',
+                          helper: 'Adds community abuse reports to IP scoring.',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: _Hci.sectionGap),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: SizedBox(
+                      height: _Hci.minTouchTarget,
+                      child: ElevatedButton.icon(
+                        onPressed: _saving ? null : _saveSettings,
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.check_rounded, size: 18),
+                        label: Text(_saving ? 'Saving…' : 'Save preferences'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.cyan,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: AppColors.borderElevated,
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Connect the app to your CyberSentinel API server',
-                    style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
-                  ),
-                  const Divider(color: Color(0xFF2A2F3E), height: 32),
-                  const Text('Backend URL', style: TextStyle(color: Colors.white, fontSize: 14)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _baseUrlController,
-                    decoration: const InputDecoration(
-                      filled: true,
-                      fillColor: Color(0xFF1A1F2E),
-                      hintText: 'http://127.0.0.1:8000',
-                      hintStyle: TextStyle(color: Color(0xFF9CA3AF)),
-                      border: OutlineInputBorder(borderSide: BorderSide.none),
                     ),
-                    style: const TextStyle(color: Color(0xFFD1D5DB)),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'Signed in as',
-                    style: TextStyle(color: Colors.white, fontSize: 14),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1F2E),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          AuthService.instance.email,
-                          style: const TextStyle(
-                            color: Color(0xFFD1D5DB),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          AuthService.instance.role,
-                          style: const TextStyle(
-                            color: Color(0xFF9CA3AF),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: () async {
-                        await AuthService.instance.logout();
-                      },
-                      icon: const Icon(Icons.logout, color: Color(0xFFF87171), size: 18),
-                      label: const Text(
-                        'Log out',
-                        style: TextStyle(color: Color(0xFFF87171)),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 25),
-            Container(
-              width: 1000,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F1420),
-                borderRadius: BorderRadius.circular(12),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Top profile card — identity, role, status, sign-out (no technical backend details).
+class _AccountCard extends StatelessWidget {
+  const _AccountCard({
+    required this.initials,
+    required this.email,
+    required this.role,
+    required this.isOnline,
+    required this.onSignOut,
+  });
+
+  final String initials;
+  final String email;
+  final String role;
+  final bool? isOnline;
+  final VoidCallback onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusLabel = isOnline == null
+        ? 'Checking status…'
+        : isOnline!
+            ? 'All services operational'
+            : 'Some services unavailable';
+    final statusColor = isOnline == null
+        ? AppColors.textDim
+        : isOnline!
+            ? AppColors.greenLight
+            : AppColors.orangeLight;
+
+    return CyberCard(
+      padding: const EdgeInsets.all(24),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.cyan.withValues(alpha: 0.85),
+                  AppColors.cyanLight.withValues(alpha: 0.7),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.key, color: Color(0xFF06B6D4)),
-                      const SizedBox(width: 8.0),
-                      const Text(
-                        'API Keys',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.cyan.withValues(alpha: 0.35)),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              initials,
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  email,
+                  style: GoogleFonts.inter(
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.cyan.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: AppColors.cyan.withValues(alpha: 0.25)),
+                      ),
+                      child: Text(
+                        role,
+                        style: GoogleFonts.inter(
+                          color: AppColors.cyanLight,
+                          fontSize: 11,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 8.0),
-                  Text(
-                    "Configure external service integrations",
-                    style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
-                  ),
-                  Divider(color: Color(0xFF2A2F3E), height: 32.0),
-                  SizedBox(height: 16.0),
-                  Text(
-                    "VirusTotal API Key",
-                    style: TextStyle(color: Colors.white, fontSize: 14),
-                  ),
-                  SizedBox(height: 8.0),
-                  TextField(
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: const Color(0xFF1A1F2E),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(
-                          color: Color(0xFF3A3F4E),
-                          width: 1,
-                        ),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(
-                          color: Color(0xFF3A3F4E),
-                          width: 1,
-                        ),
-                      ),
-                      hintText: 'Enter your VirusTotal API Key',
-                      hintStyle: const TextStyle(
-                        color: Color(0xFF9CA3AF),
-                        fontSize: 16,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 12,
-                      ),
                     ),
-                    style: const TextStyle(color: Color(0xFFD1D5DB)),
-                  ),
-                  Row(
-                    children: [
-                      Text(
-                        'Get your API key from ',
-                        style: TextStyle(color: Colors.white54, fontSize: 12),
-                      ),
-                      Text(
-                        "virustotal.com",
-                        style: TextStyle(color: Colors.cyan, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 16.0),
-                  Text(
-                    "GeoIP API Key",
-                    style: TextStyle(color: Colors.white, fontSize: 14),
-                  ),
-                  SizedBox(height: 8.0),
-                  TextField(
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: const Color(0xFF1A1F2E),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(
-                          color: Color(0xFF3A3F4E),
-                          width: 1,
-                        ),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(
-                          color: Color(0xFF3A3F4E),
-                          width: 1,
-                        ),
-                      ),
-                      hintText: 'Enter your GeoIP API Key',
-                      hintStyle: const TextStyle(
-                        color: Color(0xFF9CA3AF),
-                        fontSize: 16,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 12,
-                      ),
+                    const SizedBox(width: 12),
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
                     ),
-                    style: const TextStyle(color: Color(0xFFD1D5DB)),
-                  ),
-                  SizedBox(height: 16.0),
-                  Text(
-                    "AbuseIPDB API Key",
-                    style: TextStyle(color: Colors.white, fontSize: 14),
-                  ),
-                  SizedBox(height: 8.0),
-                  TextField(
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: const Color(0xFF1A1F2E),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(
-                          color: Color(0xFF3A3F4E),
-                          width: 1,
-                        ),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(
-                          color: Color(0xFF3A3F4E),
-                          width: 1,
-                        ),
-                      ),
-                      hintText: 'Enter your AbuseIPDB API Key',
-                      hintStyle: const TextStyle(
-                        color: Color(0xFF9CA3AF),
-                        fontSize: 16,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 12,
-                      ),
-                    ),
-                    style: const TextStyle(color: Color(0xFFD1D5DB)),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: 25.0),
-            Container(
-              width: 1000,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F1420),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF2A2F3E), width: 1),
-              ),
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(right: 12.0),
-                        child: Icon(
-                          Icons.public,
-                          color: Color(0xFF06B6D4),
-                          size: 20,
-                        ),
-                      ),
-                      Text(
-                        'Monitoring',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 6.0),
-                  Text(
-                    "Configure background monitoring and scanning",
-                    style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
-                  ),
-                  Divider(color: Color(0xFF2A2F3E), height: 24.0),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1F2E),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: const Color(0xFF3A3F4E),
-                        width: 1,
-                      ),
-                    ),
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Background Monitoring',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            SizedBox(height: 6.0),
-                            Text(
-                              'Continuously monitor network traffic for threats',
-                              style: TextStyle(
-                                color: Color(0xFF9CA3AF),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Switch(
-                          value: backgroundMonitoring,
-                          onChanged: (value) {
-                            setState(() {
-                              backgroundMonitoring = value;
-                            });
-                          },
-                          activeThumbColor: Color(0xFF06B6D4),
-                          inactiveThumbColor: Color(0xFF6B7280),
-                          inactiveTrackColor: Color(0xFF3A3F4E),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: 24.0),
-            Container(
-              width: 1000,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F1420),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF2A2F3E), width: 1),
-              ),
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(right: 12.0),
-                        child: Icon(
-                          Icons.notifications,
-                          color: Color(0xFF06B6D4),
-                          size: 20,
-                        ),
-                      ),
-                      Text(
-                        'Alerts',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 6.0),
-                  Text(
-                    "Configure notification preferences",
-                    style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
-                  ),
-                  Divider(color: Color(0xFF2A2F3E), height: 24.0),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1F2E),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: const Color(0xFF3A3F4E),
-                        width: 1,
-                      ),
-                    ),
-                    padding: const EdgeInsets.all(16.0),
-                    margin: const EdgeInsets.only(bottom: 12.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Email Alerts',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            SizedBox(height: 6.0),
-                            Text(
-                              'Receive threat alerts via email',
-                              style: TextStyle(
-                                color: Color(0xFF9CA3AF),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Switch(
-                          value: emailAlerts,
-                          onChanged: (value) {
-                            setState(() {
-                              emailAlerts = value;
-                            });
-                          },
-                          activeThumbColor: Color(0xFF06B6D4),
-                          inactiveThumbColor: Color(0xFF6B7280),
-                          inactiveTrackColor: Color(0xFF3A3F4E),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1F2E),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: const Color(0xFF3A3F4E),
-                        width: 1,
-                      ),
-                    ),
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Push Notifications',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            SizedBox(height: 6.0),
-                            Text(
-                              'Receive real-time push notifications',
-                              style: TextStyle(
-                                color: Color(0xFF9CA3AF),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Switch(
-                          value: pushNotifications,
-                          onChanged: (value) {
-                            setState(() {
-                              pushNotifications = value;
-                            });
-                          },
-                          activeThumbColor: Color(0xFF06B6D4),
-                          inactiveThumbColor: Color(0xFF6B7280),
-                          inactiveTrackColor: Color(0xFF3A3F4E),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: 24.0),
-            Container(
-              width: 1000,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F1420),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF2A2F3E), width: 1),
-              ),
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(right: 12.0),
-                        child: Icon(
-                          Icons.brightness_4,
-                          color: Color(0xFF06B6D4),
-                          size: 20,
-                        ),
-                      ),
-                      Text(
-                        'Appearance',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 6.0),
-                  Text(
-                    "Customize the application theme",
-                    style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
-                  ),
-                  Divider(color: Color(0xFF2A2F3E), height: 24.0),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              selectedTheme = 'light';
-                            });
-                          },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1A1F2E),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: selectedTheme == 'light'
-                                    ? const Color(0xFF06B6D4)
-                                    : const Color(0xFF3A3F4E),
-                                width: selectedTheme == 'light' ? 2 : 1,
-                              ),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 16.0),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.wb_sunny,
-                                  color: selectedTheme == 'light'
-                                      ? Color(0xFF06B6D4)
-                                      : Color(0xFF9CA3AF),
-                                  size: 20,
-                                ),
-                                SizedBox(width: 8.0),
-                                Text(
-                                  'Light',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 12.0),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              selectedTheme = 'dark';
-                            });
-                          },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1A1F2E),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: selectedTheme == 'dark'
-                                    ? const Color(0xFF06B6D4)
-                                    : const Color(0xFF3A3F4E),
-                                width: selectedTheme == 'dark' ? 2 : 1,
-                              ),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 16.0),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.nights_stay,
-                                  color: selectedTheme == 'dark'
-                                      ? Color(0xFF06B6D4)
-                                      : Color(0xFF9CA3AF),
-                                  size: 20,
-                                ),
-                                SizedBox(width: 8.0),
-                                Text(
-                                  'Dark',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: 24.0),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF06B6D4),
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF06B6D4).withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
+                    const SizedBox(width: 6),
+                    Text(
+                      statusLabel,
+                      style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12),
                     ),
                   ],
                 ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: _saveSettings,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 14.0,
-                        horizontal: 24.0,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.save, color: Colors.white, size: 18),
-                          SizedBox(width: 8.0),
-                          Text(
-                            "Save Settings",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                const SizedBox(height: 4),
+                Text(
+                  'Signed in · Session active',
+                  style: GoogleFonts.inter(color: AppColors.textDim, fontSize: 12),
                 ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: _Hci.minTouchTarget,
+            child: OutlinedButton.icon(
+              onPressed: onSignOut,
+              icon: Icon(Icons.logout_rounded, size: 16, color: AppColors.redLight),
+              label: Text('Sign out', style: TextStyle(color: AppColors.redLight, fontSize: 13)),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppColors.red.withValues(alpha: 0.35)),
+                backgroundColor: AppColors.red.withValues(alpha: 0.06),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
             ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsSection extends StatelessWidget {
+  const _SettingsSection({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return CyberCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: AppColors.cyanLight, size: 20),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: GoogleFonts.inter(
+                  color: AppColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13, height: 1.4),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Divider(color: AppColors.borderElevated, height: 1),
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// HCI toggle row — label + helper on the left, switch on the right (48px min height).
+class _SettingToggle extends StatelessWidget {
+  const _SettingToggle({
+    required this.title,
+    required this.description,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String description;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.alertItemBg,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: () => onChanged(!value),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: _Hci.minTouchTarget),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.borderElevated),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.inter(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      description,
+                      style: GoogleFonts.inter(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Switch(
+                value: value,
+                onChanged: onChanged,
+                activeThumbColor: AppColors.cyan,
+                inactiveThumbColor: AppColors.textDim,
+                inactiveTrackColor: AppColors.borderElevated,
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _ThemePicker extends StatelessWidget {
+  const _ThemePicker({required this.selected, required this.onChanged});
+
+  final String selected;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(child: _ThemeOption(
+          label: 'Light',
+          icon: Icons.wb_sunny_outlined,
+          previewColors: const [Color(0xFFF8FAFC), Color(0xFFFFFFFF), Color(0xFFE2E8F0)],
+          isSelected: selected == 'light',
+          onTap: () => onChanged('light'),
+        )),
+        const SizedBox(width: 12),
+        Expanded(child: _ThemeOption(
+          label: 'Dark',
+          icon: Icons.nights_stay_outlined,
+          previewColors: const [Color(0xFF0A0E1A), Color(0xFF0F1420), Color(0xFF1A1F2E)],
+          isSelected: selected == 'dark',
+          onTap: () => onChanged('dark'),
+        )),
+      ],
+    );
+  }
+}
+
+class _ThemeOption extends StatelessWidget {
+  const _ThemeOption({
+    required this.label,
+    required this.icon,
+    required this.previewColors,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final List<Color> previewColors;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: '$label theme',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.alertItemBg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isSelected ? AppColors.cyan : AppColors.borderElevated,
+                width: isSelected ? 2 : 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (final c in previewColors)
+                      Container(
+                        width: 22,
+                        height: 22,
+                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                        decoration: BoxDecoration(
+                          color: c,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: AppColors.borderElevated),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Icon(icon, color: isSelected ? AppColors.cyan : AppColors.textMuted, size: 20),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (isSelected) ...[
+                  const SizedBox(height: 4),
+                  Icon(Icons.check_circle, size: 14, color: AppColors.cyan),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ApiKeyField extends StatelessWidget {
+  const _ApiKeyField({
+    required this.label,
+    required this.hint,
+    required this.helper,
+  });
+
+  final String label;
+  final String hint;
+  final String helper;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            color: AppColors.textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextFormField(
+          obscureText: true,
+          style: GoogleFonts.inter(color: AppColors.textPrimary, fontSize: 14),
+          cursorColor: AppColors.cyanLight,
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: GoogleFonts.inter(color: AppColors.textDim, fontSize: 14),
+            helperText: helper,
+            helperStyle: GoogleFonts.inter(color: AppColors.textDim, fontSize: 11),
+            filled: true,
+            fillColor: AppColors.alertItemBg,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: AppColors.borderElevated),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: AppColors.cyan.withValues(alpha: 0.5)),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

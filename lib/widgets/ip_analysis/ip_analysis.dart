@@ -17,7 +17,7 @@ class IPLogAnalysisPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RequireAuth(
-      child: const Scaffold(
+      child: Scaffold(
         backgroundColor: AppColors.bg,
         body: IPAnalysisContent(),
       ),

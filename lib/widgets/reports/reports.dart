@@ -1,14 +1,23 @@
-import 'dart:io';
-
 import 'package:cybersentinel/services/api_config.dart';
 import 'package:cybersentinel/services/api_service.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
+import 'package:cybersentinel/utils/file_export.dart';
 import 'package:cybersentinel/widgets/shared/animated_widgets.dart';
 import 'package:cybersentinel/widgets/shared/cyber_card.dart';
 import 'package:cybersentinel/widgets/shared/page_header.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+
+const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+String _formatShortDate(DateTime d) =>
+    '${_months[d.month - 1]} ${d.day.toString().padLeft(2, '0')}';
+
+String _formatGeneratedAt(DateTime d) {
+  final hour = d.hour.toString().padLeft(2, '0');
+  final minute = d.minute.toString().padLeft(2, '0');
+  return '${_formatShortDate(d)}, ${d.year} · $hour:$minute';
+}
 
 class ReportsContent extends StatefulWidget {
   const ReportsContent({super.key});
@@ -20,7 +29,11 @@ class ReportsContent extends StatefulWidget {
 class _ReportsContentState extends State<ReportsContent> {
   Map<String, dynamic>? _summary;
   bool _loading = true;
-  bool _downloading = false;
+  bool _generating = false;
+  bool _downloadingPdf = false;
+  bool _exportingCsv = false;
+  bool _reportReady = false;
+  DateTime? _generatedAt;
 
   static const _gap = 16.0;
   static const _pagePad = 32.0;
@@ -39,26 +52,67 @@ class _ReportsContentState extends State<ReportsContent> {
     }
     try {
       final summary = await ApiService.instance.getDashboardSummary();
-      if (mounted) setState(() { _summary = summary; _loading = false; });
+      if (mounted) {
+        setState(() {
+          _summary = summary;
+          _loading = false;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
   }
 
+  Future<void> _generateReport() async {
+    if (!ApiConfig.isConfigured) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in to generate reports')),
+      );
+      return;
+    }
+
+    setState(() => _generating = true);
+    try {
+      final summary = await ApiService.instance.getDashboardSummary();
+      if (!mounted) return;
+      setState(() {
+        _summary = summary;
+        _reportReady = true;
+        _generatedAt = DateTime.now();
+        _generating = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Security report generated successfully')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _generating = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
   Future<void> _downloadPdf() async {
-    setState(() => _downloading = true);
+    if (!_reportReady && _summary == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Generate a report first, then export')),
+      );
+      return;
+    }
+
+    setState(() => _downloadingPdf = true);
     try {
       final bytes = await ApiService.instance.downloadSummaryReport();
-      final path = await FilePicker.platform.saveFile(
+      final path = await saveBytesToFile(
+        bytes: bytes,
         fileName: 'cybersentinel_report.pdf',
-        type: FileType.custom,
-        allowedExtensions: ['pdf'],
+        extension: 'pdf',
       );
-      if (path != null) {
-        await File(path).writeAsBytes(bytes);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Report saved to $path')));
-        }
+      if (mounted && path != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PDF saved to $path')),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -67,8 +121,49 @@ class _ReportsContentState extends State<ReportsContent> {
         );
       }
     } finally {
-      if (mounted) setState(() => _downloading = false);
+      if (mounted) setState(() => _downloadingPdf = false);
     }
+  }
+
+  Future<void> _exportCsv() async {
+    if (!_reportReady && _summary == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Generate a report first, then export')),
+      );
+      return;
+    }
+
+    setState(() => _exportingCsv = true);
+    try {
+      final bytes = await ApiService.instance.downloadFirewallAlertsCsv();
+      final path = await saveBytesToFile(
+        bytes: bytes,
+        fileName: 'cybersentinel_report.csv',
+        extension: 'csv',
+      );
+      if (mounted && path != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('CSV saved to $path')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exportingCsv = false);
+    }
+  }
+
+  String get _dateRangeLabel {
+    if (_generatedAt != null) {
+      return 'Generated ${_formatGeneratedAt(_generatedAt!)}';
+    }
+    final now = DateTime.now();
+    final start = now.subtract(const Duration(days: 6));
+    return 'Weekly summary: ${_formatShortDate(start)} - ${_formatShortDate(now)}, ${now.year}';
   }
 
   @override
@@ -103,18 +198,18 @@ class _ReportsContentState extends State<ReportsContent> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const PageHeader(
+          PageHeader(
             title: 'Security reports',
             subtitle: 'Export executive summaries and review detection metrics over time.',
             icon: Icons.description_outlined,
+            badge: _reportReady ? 'Ready' : null,
           ),
-          // Header card (Figma: own bordered card)
           FadeSlideIn(
             child: CyberCard(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -126,21 +221,60 @@ class _ReportsContentState extends State<ReportsContent> {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        SizedBox(height: 4),
+                        const SizedBox(height: 4),
                         Text(
-                          'Weekly summary: Apr 06 - Apr 12, 2026',
+                          _dateRangeLabel,
                           style: TextStyle(color: AppColors.textMuted, fontSize: 14),
                         ),
                       ],
                     ),
                   ),
+                  ElevatedButton.icon(
+                    onPressed: _generating ? null : _generateReport,
+                    icon: _generating
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.textPrimary,
+                            ),
+                          )
+                        : Icon(Icons.auto_awesome_motion_outlined, size: 16),
+                    label: Text(
+                      _generating ? 'Generating...' : 'Generate Report',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.border,
+                      foregroundColor: AppColors.textPrimary,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(color: AppColors.borderElevated),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
                   OutlinedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.calendar_today_outlined, size: 16),
-                    label: const Text('Date Range', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                    onPressed: _exportingCsv ? null : _exportCsv,
+                    icon: _exportingCsv
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.textPrimary,
+                            ),
+                          )
+                        : Icon(Icons.table_chart_outlined, size: 16),
+                    label: Text(
+                      _exportingCsv ? 'Exporting...' : 'Export CSV',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.textPrimary,
-                      side: const BorderSide(color: AppColors.borderElevated),
+                      side: BorderSide(color: AppColors.borderElevated),
                       backgroundColor: AppColors.border,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -148,13 +282,17 @@ class _ReportsContentState extends State<ReportsContent> {
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton.icon(
-                    onPressed: _downloading ? null : _downloadPdf,
-                    icon: _downloading
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.download_outlined, size: 16),
+                    onPressed: _downloadingPdf ? null : _downloadPdf,
+                    icon: _downloadingPdf
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Icon(Icons.download_outlined, size: 16),
                     label: Text(
-                      _downloading ? 'Exporting...' : 'Export PDF',
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                      _downloadingPdf ? 'Exporting...' : 'Export PDF',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.cyan,
@@ -168,7 +306,6 @@ class _ReportsContentState extends State<ReportsContent> {
             ),
           ),
           const SizedBox(height: 24),
-          // Compact summary cards — single short row (Figma: label top, value + trend bottom)
           SizedBox(
             height: _summaryCardHeight,
             child: Row(
@@ -228,7 +365,6 @@ class _ReportsContentState extends State<ReportsContent> {
             ),
           ),
           const SizedBox(height: 24),
-          // Charts row — 2 columns
           SizedBox(
             height: 380,
             child: Row(
@@ -289,7 +425,7 @@ class _SummaryCard extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 14, fontWeight: FontWeight.w400),
+            style: TextStyle(color: AppColors.textMuted, fontSize: 14, fontWeight: FontWeight.w400),
           ),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -301,7 +437,7 @@ class _SummaryCard extends StatelessWidget {
                   curve: Curves.easeOutCubic,
                   builder: (_, v, _) => Text(
                     '${v.round()}$suffix',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 30,
                       height: 1,
@@ -348,7 +484,7 @@ class _ThreatTrendChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Threat Trends',
             style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
           ),
@@ -361,7 +497,7 @@ class _ThreatTrendChart extends StatelessWidget {
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
-                  getDrawingHorizontalLine: (_) => const FlLine(color: AppColors.border, dashArray: [3, 3]),
+                  getDrawingHorizontalLine: (_) => FlLine(color: AppColors.border, dashArray: [3, 3]),
                 ),
                 titlesData: FlTitlesData(
                   leftTitles: AxisTitles(
@@ -370,7 +506,7 @@ class _ThreatTrendChart extends StatelessWidget {
                       reservedSize: 28,
                       getTitlesWidget: (v, _) => Text(
                         v.toInt().toString(),
-                        style: const TextStyle(color: AppColors.textDim, fontSize: 11),
+                        style: TextStyle(color: AppColors.textDim, fontSize: 11),
                       ),
                     ),
                   ),
@@ -385,7 +521,7 @@ class _ThreatTrendChart extends StatelessWidget {
                         if (i < 0 || i >= _dates.length) return const SizedBox.shrink();
                         return Padding(
                           padding: const EdgeInsets.only(top: 6),
-                          child: Text(_dates[i], style: const TextStyle(color: AppColors.textDim, fontSize: 11)),
+                          child: Text(_dates[i], style: TextStyle(color: AppColors.textDim, fontSize: 11)),
                         );
                       },
                     ),
@@ -412,10 +548,10 @@ class _ThreatTrendChart extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          const Row(
+          Row(
             children: [
               _LegendDot(color: AppColors.red, label: 'Threats Detected'),
-              SizedBox(width: 16),
+              const SizedBox(width: 16),
               _LegendDot(color: AppColors.green, label: 'Threats Blocked'),
             ],
           ),
@@ -432,7 +568,7 @@ class _ThreatSourcePie extends StatelessWidget {
     ('Asia', 45.0, AppColors.red),
     ('Europe', 30.0, AppColors.amber),
     ('Americas', 15.0, AppColors.green),
-    ('Other', 10.0, AppColors.textDim),
+    ('Other', 10.0, AppColors.grey),
   ];
 
   @override
@@ -441,7 +577,7 @@ class _ThreatSourcePie extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Threat Source Distribution',
             style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
           ),
@@ -463,7 +599,7 @@ class _ThreatSourcePie extends StatelessWidget {
                             color: d.$3,
                             radius: 100,
                             title: '${d.$1} ${d.$2.round()}%',
-                            titleStyle: const TextStyle(color: AppColors.textPrimary, fontSize: 11),
+                            titleStyle: TextStyle(color: AppColors.textPrimary, fontSize: 11),
                           ),
                         )
                         .toList(),
@@ -491,7 +627,7 @@ class _AttackTypesBar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Top Attack Types',
             style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
           ),
@@ -505,7 +641,7 @@ class _AttackTypesBar extends StatelessWidget {
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
-                  getDrawingHorizontalLine: (_) => const FlLine(color: AppColors.border, dashArray: [3, 3]),
+                  getDrawingHorizontalLine: (_) => FlLine(color: AppColors.border, dashArray: [3, 3]),
                 ),
                 titlesData: FlTitlesData(
                   leftTitles: AxisTitles(
@@ -514,7 +650,7 @@ class _AttackTypesBar extends StatelessWidget {
                       reservedSize: 32,
                       getTitlesWidget: (v, _) => Text(
                         v.toInt().toString(),
-                        style: const TextStyle(color: AppColors.textDim, fontSize: 11),
+                        style: TextStyle(color: AppColors.textDim, fontSize: 11),
                       ),
                     ),
                   ),
@@ -529,7 +665,7 @@ class _AttackTypesBar extends StatelessWidget {
                         if (i < 0 || i >= _types.length) return const SizedBox.shrink();
                         return Padding(
                           padding: const EdgeInsets.only(top: 8),
-                          child: Text(_types[i], style: const TextStyle(color: AppColors.textDim, fontSize: 11)),
+                          child: Text(_types[i], style: TextStyle(color: AppColors.textDim, fontSize: 11)),
                         );
                       },
                     ),
@@ -571,7 +707,7 @@ class _LegendDot extends StatelessWidget {
       children: [
         Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(width: 6),
-        Text(label, style: const TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w500)),
+        Text(label, style: TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w500)),
       ],
     );
   }
@@ -582,9 +718,9 @@ class ReportsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: AppColors.bg,
-      body: ReportsContent(),
+      body: const ReportsContent(),
     );
   }
 }

@@ -14,7 +14,7 @@ class RequireAuth extends StatelessWidget {
       listenable: AuthService.instance,
       builder: (context, _) {
         if (!AuthService.instance.isAuthenticated) {
-          return const Scaffold(
+          return Scaffold(
             backgroundColor: AppColors.bg,
             body: Center(
               child: CircularProgressIndicator(color: AppColors.cyan),

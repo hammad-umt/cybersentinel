@@ -93,12 +93,12 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
                       Expanded(
                         child: TextField(
                           controller: _ipController,
-                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
+                          style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
                           cursorColor: AppColors.cyanLight,
                           decoration: InputDecoration(
-                            prefixIcon: const Icon(Icons.search, color: AppColors.textMuted),
+                            prefixIcon: Icon(Icons.search, color: AppColors.textMuted),
                             hintText: 'Enter IP address (e.g. 185.220.101.45)',
-                            hintStyle: const TextStyle(color: AppColors.textDim),
+                            hintStyle: TextStyle(color: AppColors.textDim),
                             filled: true,
                             fillColor: AppColors.border,
                             border: OutlineInputBorder(
@@ -128,7 +128,7 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
                                 height: 20,
                                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                               )
-                            : const Text('Analyze', style: TextStyle(fontWeight: FontWeight.w600)),
+                            : Text('Analyze', style: TextStyle(fontWeight: FontWeight.w600)),
                       ),
                     ],
                   ),
@@ -151,7 +151,7 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
     if (_error != null) {
       return FadeSlideIn(
         key: const ValueKey('error'),
-        child: Text(_error!, style: const TextStyle(color: AppColors.redLight)),
+        child: Text(_error!, style: TextStyle(color: AppColors.redLight)),
       );
     }
 
@@ -163,12 +163,12 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
             children: [
               Icon(Icons.search, size: 64, color: AppColors.textDim.withValues(alpha: 0.5)),
               const SizedBox(height: 24),
-              const Text(
+               Text(
                 'No IP Analyzed Yet',
                 style: TextStyle(color: AppColors.textPrimary, fontSize: 24, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 12),
-              const Text(
+               Text(
                 'Enter an IP address above to view threat intelligence',
                 style: TextStyle(color: AppColors.textMuted, fontSize: 16),
               ),
@@ -323,10 +323,10 @@ class _InfoCard extends StatelessWidget {
             child: Icon(icon, color: iconColor, size: 24),
           ),
           const Spacer(),
-          Text(title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-          Text(subtitle, style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+          Text(title, style: TextStyle(color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+          Text(subtitle, style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
           const SizedBox(height: 4),
-          Text(label, style: const TextStyle(color: AppColors.textDim, fontSize: 12)),
+          Text(label, style: TextStyle(color: AppColors.textDim, fontSize: 12)),
         ],
       ),
     );
@@ -359,14 +359,14 @@ class _ReputationCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(color: AppColors.red.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-            child: const Icon(Icons.shield, color: AppColors.red, size: 24),
+            child: Icon(Icons.shield, color: AppColors.red, size: 24),
           ),
           const Spacer(),
           AnimatedCounter(
             value: score.round(),
-            style: const TextStyle(color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
           ),
-          Text('/100 · $abuseLabel', style: const TextStyle(color: AppColors.textMuted, fontSize: 13), maxLines: 2, overflow: TextOverflow.ellipsis),
+          Text('/100 · $abuseLabel', style: TextStyle(color: AppColors.textMuted, fontSize: 13), maxLines: 2, overflow: TextOverflow.ellipsis),
           const SizedBox(height: 12),
           AnimatedProgressBar(value: score / 100, color: barColor),
         ],
@@ -403,18 +403,18 @@ class _MapPlaceholder extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 128, height: 128, child: PulsingDot(color: AppColors.cyan, size: 12)),
+            SizedBox(width: 128, height: 128, child: PulsingDot(color: AppColors.cyan, size: 12)),
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.location_on, color: AppColors.cyanLight, size: 48),
+                Icon(Icons.location_on, color: AppColors.cyanLight, size: 48),
                 const SizedBox(height: 8),
                 Text(ip, style: GoogleFonts.jetBrainsMono(color: AppColors.textPrimary, fontSize: 16)),
                 if (geo != null && geo!.locationLabel != 'Unknown') ...[
                   const SizedBox(height: 4),
                   Text(
                     geo!.locationLabel,
-                    style: const TextStyle(color: AppColors.textMuted, fontSize: 14),
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 14),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -482,7 +482,7 @@ class _IpDetails extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(r.$1, style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                    Text(r.$1, style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
                     if (r.$1 == 'Threat Level')
                       CyberBadge(label: severity, color: color)
                     else
@@ -504,7 +504,7 @@ class _IpDetails extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
+               Text(
                 'IP Information',
                 style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
               ),
@@ -566,7 +566,7 @@ class _ActivityChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Activity History', style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
+           Text('Activity History', style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
           const SizedBox(height: 16),
           SizedBox(
             height: 250,
@@ -575,7 +575,7 @@ class _ActivityChart extends StatelessWidget {
               LineChartData(
                 gridData: FlGridData(
                   show: true,
-                  getDrawingHorizontalLine: (_) => const FlLine(color: AppColors.border, dashArray: [3, 3]),
+                  getDrawingHorizontalLine: (_) =>  FlLine(color: AppColors.border, dashArray: [3, 3]),
                 ),
                 titlesData: const FlTitlesData(
                   leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),

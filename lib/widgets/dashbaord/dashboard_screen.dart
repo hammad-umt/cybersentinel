@@ -133,7 +133,7 @@ class _DashboardContentState extends State<DashboardContent> {
               actions: IconButton(
                 onPressed: _loadData,
                 tooltip: 'Refresh dashboard',
-                icon: const Icon(Icons.refresh_rounded, color: AppColors.textMuted),
+                icon: Icon(Icons.refresh_rounded, color: AppColors.textMuted),
               ),
             ),
           ),
@@ -320,7 +320,7 @@ class _ThreatScoreCard extends StatelessWidget {
                 ),
                 child: Icon(Icons.shield_outlined, color: _color, size: 24),
               ),
-              const Text(
+              Text(
                 'RISK LEVEL',
                 style: TextStyle(
                   color: AppColors.textLabel,
@@ -335,7 +335,7 @@ class _ThreatScoreCard extends StatelessWidget {
           AnimatedCounter(
             value: score,
             suffix: '%',
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.textPrimary,
               fontSize: 34,
               height: 1,
@@ -343,7 +343,7 @@ class _ThreatScoreCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Threat Score',
             style: TextStyle(color: AppColors.textMuted, fontSize: 14, fontWeight: FontWeight.w500),
           ),
@@ -353,7 +353,7 @@ class _ThreatScoreCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Critical',
                 style: TextStyle(color: AppColors.textLabel, fontSize: 11, fontWeight: FontWeight.w500),
               ),
@@ -418,7 +418,7 @@ class _KpiCard extends StatelessWidget {
               final display = formatLarge ? _formatLarge(v) : v.round().toString();
               return Text(
                 display,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 34,
                   height: 1,
@@ -430,7 +430,7 @@ class _KpiCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             label,
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 14, fontWeight: FontWeight.w500),
+            style: TextStyle(color: AppColors.textMuted, fontSize: 14, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 6),
           Row(
@@ -484,7 +484,7 @@ class _TrafficChart extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -529,7 +529,7 @@ class _TrafficChart extends StatelessWidget {
                     show: true,
                     drawVerticalLine: false,
                     horizontalInterval: 2000,
-                    getDrawingHorizontalLine: (_) => const FlLine(
+                    getDrawingHorizontalLine: (_) => FlLine(
                       color: AppColors.border,
                       strokeWidth: 1,
                       dashArray: [3, 3],
@@ -543,7 +543,7 @@ class _TrafficChart extends StatelessWidget {
                         interval: 2000,
                         getTitlesWidget: (v, _) => Text(
                           v.toInt().toString(),
-                          style: const TextStyle(color: AppColors.textDim, fontSize: 11),
+                          style: TextStyle(color: AppColors.textDim, fontSize: 11),
                         ),
                       ),
                     ),
@@ -564,7 +564,7 @@ class _TrafficChart extends StatelessWidget {
                             padding: const EdgeInsets.only(top: 6),
                             child: Text(
                               '$h:${t.minute.toString().padLeft(2, '0')} $ampm',
-                              style: const TextStyle(color: AppColors.textDim, fontSize: 10),
+                              style: TextStyle(color: AppColors.textDim, fontSize: 10),
                             ),
                           );
                         },
@@ -615,7 +615,7 @@ class _LegendDot extends StatelessWidget {
       children: [
         Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(width: 7),
-        Text(label, style: const TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w500)),
+        Text(label, style: TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w500)),
       ],
     );
   }
@@ -636,7 +636,7 @@ class _AlertsPanel extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -661,7 +661,7 @@ class _AlertsPanel extends StatelessWidget {
                 ),
                 child: Text(
                   '$active active',
-                  style: const TextStyle(color: AppColors.redLight, fontSize: 12, fontWeight: FontWeight.w600),
+                  style: TextStyle(color: AppColors.redLight, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -669,7 +669,7 @@ class _AlertsPanel extends StatelessWidget {
           const SizedBox(height: 12),
           Expanded(
             child: alerts.isEmpty
-                ? const Center(child: Text('No recent alerts', style: TextStyle(color: AppColors.textDim)))
+                ? Center(child: Text('No recent alerts', style: TextStyle(color: AppColors.textDim)))
                 : ListView.separated(
                     itemCount: alerts.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -717,7 +717,7 @@ class _AlertItem extends StatelessWidget {
               Expanded(
                 child: Text(
                   alertTitle(item),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -741,7 +741,7 @@ class _AlertItem extends StatelessWidget {
               ),
               Text(
                 timeAgo(item['timestamp']?.toString()),
-                style: const TextStyle(color: AppColors.textLabel, fontSize: 13, fontWeight: FontWeight.w500),
+                style: TextStyle(color: AppColors.textLabel, fontSize: 13, fontWeight: FontWeight.w500),
               ),
             ],
           ),
@@ -768,7 +768,7 @@ class _PacketDonut extends StatelessWidget {
       return _figmaDefaults.map((e) => (e.$1, e.$2.toDouble(), e.$3)).toList();
     }
     final total = protocols.fold<int>(0, (s, p) => s + ((p['count'] as num?)?.toInt() ?? 0));
-    const colors = [AppColors.donutHttp, AppColors.donutSsh, AppColors.donutFtp, AppColors.donutDns, AppColors.donutOther];
+    final colors = [AppColors.donutHttp, AppColors.donutSsh, AppColors.donutFtp, AppColors.donutDns, AppColors.donutOther];
     return protocols.asMap().entries.map((e) {
       final count = (e.value['count'] as num?)?.toInt() ?? 0;
       final pct = total > 0 ? count / total * 100 : 0.0;
@@ -784,12 +784,12 @@ class _PacketDonut extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Packet Classification',
             style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'By protocol type',
             style: TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
           ),
@@ -859,12 +859,12 @@ class _PctCell extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           segment.$1,
-          style: const TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w500),
+          style: TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w500),
         ),
         const Spacer(),
         Text(
           '${segment.$2.round()}%',
-          style: const TextStyle(color: AppColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w600),
+          style: TextStyle(color: AppColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w600),
         ),
         const SizedBox(width: 16),
       ],
@@ -886,7 +886,7 @@ class _MaliciousIPsTable extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -907,8 +907,8 @@ class _MaliciousIPsTable extends StatelessWidget {
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                icon: const Icon(Icons.open_in_new, size: 12, color: AppColors.cyanLight),
-                label: const Text(
+                icon: Icon(Icons.open_in_new, size: 12, color: AppColors.cyanLight),
+                label: Text(
                   'View All',
                   style: TextStyle(color: AppColors.cyanLight, fontSize: 13, fontWeight: FontWeight.w500),
                 ),
@@ -916,9 +916,9 @@ class _MaliciousIPsTable extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          const Divider(color: AppColors.border, height: 1),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
+          Divider(color: AppColors.border, height: 1),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
                 Expanded(
@@ -956,10 +956,10 @@ class _MaliciousIPsTable extends StatelessWidget {
           ),
           Expanded(
             child: threats.isEmpty
-                ? const Center(child: Text('No threat data yet', style: TextStyle(color: AppColors.textDim)))
+                ? Center(child: Text('No threat data yet', style: TextStyle(color: AppColors.textDim)))
                 : ListView.separated(
                     itemCount: threats.length,
-                    separatorBuilder: (_, __) => const Divider(color: AppColors.border, height: 1),
+                    separatorBuilder: (_, __) => Divider(color: AppColors.border, height: 1),
                     itemBuilder: (context, i) {
                       final row = threats[i];
                       final severity = row['severity']?.toString() ?? 'medium';
@@ -1036,7 +1036,7 @@ class _TableRowState extends State<_TableRow> {
                 flex: 2,
                 child: Text(
                   widget.country,
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 14, fontWeight: FontWeight.w500),
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 14, fontWeight: FontWeight.w500),
                 ),
               ),
               Expanded(
@@ -1044,7 +1044,7 @@ class _TableRowState extends State<_TableRow> {
                 child: Text(
                   widget.attempts.toString(),
                   textAlign: TextAlign.right,
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700),
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700),
                 ),
               ),
               Expanded(

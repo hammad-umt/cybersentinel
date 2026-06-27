@@ -1,31 +1,36 @@
 import 'package:flutter/material.dart';
 
-/// Exact Figma Make CyberSentinel design tokens.
+/// CyberSentinel design tokens — supports light and dark appearance.
 abstract final class AppColors {
+  static bool _isLight = false;
+
+  static void setLightMode(bool value) => _isLight = value;
+  static bool get isLight => _isLight;
+
   // Surfaces
-  static const bg = Color(0xFF0A0E1A);
-  static const panel = Color(0xFF0F1420);
-  static const card = Color(0xFF0F1420);
-  static const chartBg = Color(0xFF0B1120);
-  static const alertItemBg = Color(0xFF1A1F2E);
-  static const rowHover = Color(0xFF1A1F2E);
+  static Color get bg => _isLight ? const Color(0xFFF1F5F9) : const Color(0xFF0A0E1A);
+  static Color get panel => _isLight ? const Color(0xFFFFFFFF) : const Color(0xFF0F1420);
+  static Color get card => _isLight ? const Color(0xFFFFFFFF) : const Color(0xFF0F1420);
+  static Color get chartBg => _isLight ? const Color(0xFFF8FAFC) : const Color(0xFF0B1120);
+  static Color get alertItemBg => _isLight ? const Color(0xFFF1F5F9) : const Color(0xFF1A1F2E);
+  static Color get rowHover => _isLight ? const Color(0xFFE2E8F0) : const Color(0xFF1A1F2E);
 
   // Borders
-  static const border = Color(0xFF1A1F2E);
-  static const borderElevated = Color(0xFF2A2F3E);
-  static const borderHover = Color(0xFF3A3F4E);
+  static Color get border => _isLight ? const Color(0xFFE2E8F0) : const Color(0xFF1A1F2E);
+  static Color get borderElevated => _isLight ? const Color(0xFFCBD5E1) : const Color(0xFF2A2F3E);
+  static Color get borderHover => _isLight ? const Color(0xFF94A3B8) : const Color(0xFF3A3F4E);
 
-  // Brand / accent
+  // Brand / accent (unchanged across themes)
   static const cyan = Color(0xFF06B6D4);
   static const cyanLight = Color(0xFF22D3EE);
   static const cyanHover = Color(0xFF0891B2);
 
   // Text
-  static const textPrimary = Color(0xFFFFFFFF);
-  static const textMuted = Color(0xFF9CA3AF);
-  static const textDim = Color(0xFF6B7280);
-  static const textLabel = Color(0xFF667085);
-  static const textDisabled = Color(0xFF4B5563);
+  static Color get textPrimary => _isLight ? const Color(0xFF0F172A) : const Color(0xFFFFFFFF);
+  static Color get textMuted => _isLight ? const Color(0xFF64748B) : const Color(0xFF9CA3AF);
+  static Color get textDim => _isLight ? const Color(0xFF94A3B8) : const Color(0xFF6B7280);
+  static Color get textLabel => _isLight ? const Color(0xFF475569) : const Color(0xFF667085);
+  static Color get textDisabled => _isLight ? const Color(0xFFCBD5E1) : const Color(0xFF4B5563);
 
   // Semantic
   static const red = Color(0xFFEF4444);
@@ -48,7 +53,7 @@ abstract final class AppColors {
   static const chartSuspicious = Color(0xFFF59E0B);
   static const chartMalicious = Color(0xFFEF4444);
 
-  // Donut segments (Figma order)
+  // Donut segments
   static const donutHttp = Color(0xFF06B6D4);
   static const donutSsh = Color(0xFF10B981);
   static const donutFtp = Color(0xFFF59E0B);

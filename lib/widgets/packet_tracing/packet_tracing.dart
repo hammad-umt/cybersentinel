@@ -135,13 +135,13 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                     color: AppColors.cyan.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.settings_ethernet, color: AppColors.cyanLight, size: 20),
+                  child: Icon(Icons.settings_ethernet, color: AppColors.cyanLight, size: 20),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     forStart ? 'Start Live Capture' : 'Capture Settings',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
@@ -160,10 +160,10 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                     forStart
                         ? 'Choose a network interface and capture engine before starting.'
                         : 'Adjust interface, filter, and capture engine.',
-                    style: const TextStyle(color: AppColors.textMuted, fontSize: 13, height: 1.4),
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 13, height: 1.4),
                   ),
                   const SizedBox(height: 18),
-                  const Text(
+                  Text(
                     'Network interface',
                     style: TextStyle(
                       color: AppColors.textPrimary,
@@ -176,7 +176,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                   const SizedBox(height: 16),
                   TextField(
                     controller: _bpfController,
-                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
                     decoration: _fieldDecoration(
                       label: 'BPF Filter (optional)',
                       hint: 'e.g. tcp port 443',
@@ -201,7 +201,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
+                              Text(
                                 'Use Tshark engine',
                                 style: TextStyle(
                                   color: AppColors.textPrimary,
@@ -214,7 +214,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                                 useTshark
                                     ? 'Deep packet parsing via Tshark'
                                     : 'Standard capture (faster, lighter)',
-                                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                               ),
                             ],
                           ),
@@ -241,7 +241,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                 onPressed: () => Navigator.pop(ctx, false),
                 child: Text(
                   forStart ? 'Cancel' : 'Close',
-                  style: const TextStyle(color: AppColors.textMuted),
+                  style: TextStyle(color: AppColors.textMuted),
                 ),
               ),
               if (forStart)
@@ -250,8 +250,8 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                           _capture.selectedInterfaceIndex == null
                       ? null
                       : () => Navigator.pop(ctx, true),
-                  icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                  label: const Text('Start Capture'),
+                  icon: Icon(Icons.play_arrow_rounded, size: 18),
+                  label: Text('Start Capture'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.cyan,
                     foregroundColor: Colors.white,
@@ -263,7 +263,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
               else
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Done', style: TextStyle(color: AppColors.cyanLight)),
+                  child: Text('Done', style: TextStyle(color: AppColors.cyanLight)),
                 ),
             ],
           );
@@ -348,13 +348,13 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
     return InputDecoration(
       labelText: label,
       hintText: hint,
-      labelStyle: const TextStyle(color: AppColors.textDim, fontSize: 13),
-      hintStyle: const TextStyle(color: AppColors.textDisabled, fontSize: 13),
+      labelStyle: TextStyle(color: AppColors.textDim, fontSize: 13),
+      hintStyle: TextStyle(color: AppColors.textDisabled, fontSize: 13),
       filled: true,
       fillColor: AppColors.border,
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: AppColors.borderElevated),
+        borderSide: BorderSide(color: AppColors.borderElevated),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
@@ -376,8 +376,8 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
         isExpanded: true,
         value: value,
         dropdownColor: AppColors.panel,
-        icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.textMuted, size: 20),
-        style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+        icon: Icon(Icons.keyboard_arrow_down, color: AppColors.textMuted, size: 20),
+        style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
         items: items,
         onChanged: enabled ? onChanged : null,
       ),
@@ -414,14 +414,14 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              textStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             ),
           );
 
           final filters = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.filter_list, color: AppColors.textMuted, size: 20),
+              Icon(Icons.filter_list, color: AppColors.textMuted, size: 20),
               const SizedBox(width: 12),
               _styledDropdown<String>(
                 width: 160,
@@ -482,7 +482,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
 
   Widget _buildInterfaceSelector({bool compact = true, bool inDialog = false}) {
     if (_capture.isLoadingInterfaces) {
-      return const Row(
+      return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.settings_ethernet, color: AppColors.textMuted, size: 20),
@@ -502,14 +502,14 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
       return Row(
         mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
         children: [
-          const Icon(Icons.settings_ethernet, color: AppColors.textMuted, size: 20),
+          Icon(Icons.settings_ethernet, color: AppColors.textMuted, size: 20),
           const SizedBox(width: 8),
-          const Expanded(
+           Expanded(
             child: Text('No interfaces found', style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
           ),
           TextButton(
             onPressed: _capture.loadInterfaces,
-            child: const Text('Refresh', style: TextStyle(color: AppColors.cyanLight)),
+            child: Text('Refresh', style: TextStyle(color: AppColors.cyanLight)),
           ),
         ],
       );
@@ -520,7 +520,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
     return Row(
       children: [
         if (compact) ...[
-          const Icon(Icons.settings_ethernet, color: AppColors.textMuted, size: 20),
+          Icon(Icons.settings_ethernet, color: AppColors.textMuted, size: 20),
           const SizedBox(width: 8),
         ],
         Expanded(
@@ -563,7 +563,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                 children: [
                   Row(
                     children: [
-                      const Text(
+                      Text(
                         'Live Packet Stream',
                         style: TextStyle(
                           color: AppColors.textPrimary,
@@ -573,19 +573,19 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                       ),
                       if (_isCapturing) ...[
                         const SizedBox(width: 10),
-                        const PulsingDot(color: AppColors.green, size: 8),
+                        PulsingDot(color: AppColors.green, size: 8),
                       ],
                     ],
                   ),
                   const SizedBox(height: 4),
                   Text(
                     _streamStatus,
-                    style: const TextStyle(color: AppColors.textMuted, fontSize: 14),
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 14),
                   ),
                 ],
               ),
             ),
-            const Divider(height: 1, color: AppColors.border),
+            Divider(height: 1, color: AppColors.border),
             Expanded(
               child: packets.isEmpty
                   ? Center(
@@ -602,7 +602,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                             _isCapturing
                                 ? 'Waiting for packets...'
                                 : 'No packets yet — click Start Capture',
-                            style: const TextStyle(color: AppColors.textMuted, fontSize: 14),
+                            style: TextStyle(color: AppColors.textMuted, fontSize: 14),
                           ),
                         ],
                       ),
@@ -642,7 +642,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          Text(
             'Packet Details',
             style: TextStyle(
               color: AppColors.textPrimary,
@@ -653,7 +653,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
           const SizedBox(height: 16),
           Expanded(
             child: packet == null
-                ? const Center(
+                ? Center(
                     child: Text(
                       'Select a packet to view details',
                       style: TextStyle(color: AppColors.textDim, fontSize: 14),
@@ -668,7 +668,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                         _DetailField(label: 'Protocol', value: packet.protocol),
                         _DetailField(label: 'Packet Size', value: packet.size),
                         const SizedBox(height: 4),
-                        const Text(
+                        Text(
                           'ML Classification',
                           style: TextStyle(color: AppColors.textDim, fontSize: 12),
                         ),
@@ -677,9 +677,9 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                         const SizedBox(height: 16),
                         _DetailField(label: 'Timestamp', value: packet.time, mono: true),
                         const SizedBox(height: 16),
-                        const Divider(color: AppColors.border),
+                        Divider(color: AppColors.border),
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                           'Raw Packet Data',
                           style: TextStyle(color: AppColors.textDim, fontSize: 12),
                         ),
@@ -768,7 +768,7 @@ class _PacketTableHeader extends StatelessWidget {
     return Container(
       color: AppColors.border,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: const Row(
+      child: Row(
         children: [
           _HeaderCell('IP Address', flex: 3, align: TextAlign.left),
           _HeaderCell('Port', flex: 1, align: TextAlign.left),
@@ -796,7 +796,7 @@ class _HeaderCell extends StatelessWidget {
       child: Text(
         label.toUpperCase(),
         textAlign: align,
-        style: const TextStyle(
+        style: TextStyle(
           color: AppColors.textDim,
           fontSize: 11,
           fontWeight: FontWeight.w500,
@@ -831,7 +831,7 @@ class _PacketTableRow extends StatelessWidget {
         hoverColor: AppColors.rowHover.withValues(alpha: 0.6),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(bottom: BorderSide(color: AppColors.border)),
           ),
           child: Row(
@@ -850,14 +850,14 @@ class _PacketTableRow extends StatelessWidget {
                 flex: 1,
                 child: Text(
                   packet.port,
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 13),
                 ),
               ),
               Expanded(
                 flex: 2,
                 child: Text(
                   packet.protocol,
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 13),
                 ),
               ),
               Expanded(
@@ -865,7 +865,7 @@ class _PacketTableRow extends StatelessWidget {
                 child: Text(
                   packet.size,
                   textAlign: TextAlign.right,
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 13),
                 ),
               ),
               Expanded(
@@ -932,13 +932,13 @@ class _DetailField extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: AppColors.textDim, fontSize: 12)),
+          Text(label, style: TextStyle(color: AppColors.textDim, fontSize: 12)),
           const SizedBox(height: 4),
           Text(
             value,
             style: mono
                 ? GoogleFonts.jetBrainsMono(color: AppColors.textPrimary, fontSize: 14)
-                : const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                : TextStyle(color: AppColors.textPrimary, fontSize: 14),
           ),
         ],
       ),

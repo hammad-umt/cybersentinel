@@ -212,9 +212,9 @@ class _ShimmerBoxState extends State<ShimmerBox>
             gradient: LinearGradient(
               begin: Alignment(-1 + 2 * _controller.value, 0),
               end: Alignment(-0.5 + 2 * _controller.value, 0),
-              colors: const [
+              colors: [
                 AppColors.border,
-                Color(0xFF252B3D),
+                AppColors.isLight ? const Color(0xFFE2E8F0) : const Color(0xFF252B3D),
                 AppColors.border,
               ],
             ),
@@ -227,7 +227,7 @@ class _ShimmerBoxState extends State<ShimmerBox>
 
 /// Pulsing dot for LIVE status badge.
 class PulsingDot extends StatefulWidget {
-  const PulsingDot({super.key, this.color = AppColors.red, this.size = 8});
+  PulsingDot({super.key, this.color = AppColors.red, this.size = 8});
 
   final Color color;
   final double size;
@@ -297,12 +297,12 @@ class SmoothDataView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(error!, style: const TextStyle(color: AppColors.redLight)),
+            Text(error!, style: TextStyle(color: AppColors.redLight)),
             if (onRetry != null) ...[
               const SizedBox(height: 12),
               TextButton(
                 onPressed: onRetry,
-                child: const Text('Retry', style: TextStyle(color: AppColors.cyanLight)),
+                child: Text('Retry', style: TextStyle(color: AppColors.cyanLight)),
               ),
             ],
           ],

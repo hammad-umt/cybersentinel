@@ -1,12 +1,14 @@
 import 'package:cybersentinel/auth/auth_gate.dart';
 import 'package:cybersentinel/services/api_config.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
+import 'package:cybersentinel/theme/app_theme.dart';
+import 'package:cybersentinel/theme/theme_service.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ApiConfig.load();
+  await ThemeService.instance.load();
   runApp(const MyApp());
 }
 
@@ -15,19 +17,22 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: AppColors.bg,
-        colorScheme: ColorScheme.fromSeed(seedColor: AppColors.border),
-        textTheme: GoogleFonts.interTextTheme(),
-        textSelectionTheme: const TextSelectionThemeData(
-          selectionColor: Colors.white,
-          cursorColor: AppColors.cyanLight,
-        ),
-      ),
-      home: const AuthGate(),
+    return ListenableBuilder(
+      listenable: ThemeService.instance,
+      builder: (context, _) {
+        final themeService = ThemeService.instance;
+        // Keep design tokens in sync with the active theme mode.
+        AppColors.setLightMode(themeService.isLight);
+
+        return MaterialApp(
+          key: ValueKey(themeService.mode),
+          debugShowCheckedModeBanner: false,
+          themeMode: themeService.mode,
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          home: const AuthGate(),
+        );
+      },
     );
   }
 }

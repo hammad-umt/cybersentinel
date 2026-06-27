@@ -246,7 +246,7 @@ class _CopilotFab extends StatelessWidget {
               ),
               border: Border.all(color: AppColors.cyanLight.withValues(alpha: 0.4)),
             ),
-            child: const Icon(Icons.auto_awesome, color: Colors.white, size: 24),
+            child: Icon(Icons.auto_awesome, color: Colors.white, size: 24),
           ),
         ),
       ),
@@ -344,7 +344,7 @@ class _PanelHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Row(
@@ -355,7 +355,7 @@ class _PanelHeader extends StatelessWidget {
               color: AppColors.cyan.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(Icons.auto_awesome, color: AppColors.cyanLight, size: 18),
+            child: Icon(Icons.auto_awesome, color: AppColors.cyanLight, size: 18),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -390,7 +390,7 @@ class _PanelHeader extends StatelessWidget {
                 Container(
                   width: 6,
                   height: 6,
-                  decoration: const BoxDecoration(color: AppColors.greenLight, shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: AppColors.greenLight, shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 5),
                 Text(
@@ -406,7 +406,7 @@ class _PanelHeader extends StatelessWidget {
           ),
           IconButton(
             onPressed: onClose,
-            icon: const Icon(Icons.close_rounded, color: AppColors.textMuted),
+            icon: Icon(Icons.close_rounded, color: AppColors.textMuted),
             tooltip: 'Close',
           ),
         ],
@@ -434,7 +434,7 @@ class _MessageBubble extends StatelessWidget {
             CircleAvatar(
               radius: 14,
               backgroundColor: AppColors.cyan.withValues(alpha: 0.15),
-              child: const Icon(Icons.auto_awesome, size: 14, color: AppColors.cyanLight),
+              child: Icon(Icons.auto_awesome, size: 14, color: AppColors.cyanLight),
             ),
             const SizedBox(width: 8),
           ],
@@ -542,7 +542,7 @@ class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
       child: Container(
         width: 6,
         height: 6,
-        decoration: const BoxDecoration(color: AppColors.cyanLight, shape: BoxShape.circle),
+        decoration: BoxDecoration(color: AppColors.cyanLight, shape: BoxShape.circle),
       ),
     );
   }
@@ -563,7 +563,7 @@ class _InputBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(top: BorderSide(color: AppColors.border)),
         color: AppColors.chartBg,
       ),
@@ -589,7 +589,7 @@ class _InputBar extends StatelessWidget {
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.borderElevated),
+                  borderSide: BorderSide(color: AppColors.borderElevated),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -613,7 +613,7 @@ class _InputBar extends StatelessWidget {
                         padding: EdgeInsets.all(12),
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
-                    : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                    : Icon(Icons.send_rounded, color: Colors.white, size: 20),
               ),
             ),
           ),

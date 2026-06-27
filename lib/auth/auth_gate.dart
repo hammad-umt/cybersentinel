@@ -2,6 +2,7 @@ import 'package:cybersentinel/auth/auth_navigator.dart';
 import 'package:cybersentinel/auth/protected_main_shell.dart';
 import 'package:cybersentinel/services/auth_service.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
+import 'package:cybersentinel/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 
 /// Routes users to auth screens or the protected app based on session state.
@@ -27,7 +28,7 @@ class _AuthGateState extends State<AuthGate> {
         final auth = AuthService.instance;
 
         if (!auth.isInitialized || auth.isLoading) {
-          return const Scaffold(
+          return Scaffold(
             backgroundColor: AppColors.bg,
             body: Center(
               child: CircularProgressIndicator(color: AppColors.cyan),
@@ -40,7 +41,11 @@ class _AuthGateState extends State<AuthGate> {
         }
 
         final resetToken = Uri.base.queryParameters['token'];
-        return AuthNavigator(initialResetToken: resetToken);
+        // Auth screens always use the branded dark cyber layout.
+        return Theme(
+          data: AppTheme.dark(),
+          child: AuthNavigator(initialResetToken: resetToken),
+        );
       },
     );
   }

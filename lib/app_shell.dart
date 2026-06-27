@@ -1,4 +1,5 @@
 import 'package:cybersentinel/theme/app_colors.dart';
+import 'package:cybersentinel/theme/theme_service.dart';
 import 'package:cybersentinel/widgets/copilot/copilot_assistant.dart';
 import 'package:cybersentinel/widgets/dashbaord/dashboard_screen.dart';
 import 'package:cybersentinel/widgets/firewall_logs/firewall_logs.dart';
@@ -91,7 +92,7 @@ class _MainAppShellState extends State<MainAppShell> {
       color: AppColors.panel,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AppColors.borderElevated),
+        side: BorderSide(color: AppColors.borderElevated),
       ),
       items: [
         PopupMenuItem<String>(
@@ -101,7 +102,7 @@ class _MainAppShellState extends State<MainAppShell> {
             children: [
               Text(
                 auth.email,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textPrimary,
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
@@ -110,7 +111,7 @@ class _MainAppShellState extends State<MainAppShell> {
               const SizedBox(height: 4),
               Text(
                 auth.role,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textMuted,
                   fontSize: 12,
                 ),
@@ -119,7 +120,7 @@ class _MainAppShellState extends State<MainAppShell> {
           ),
         ),
         const PopupMenuDivider(),
-        const PopupMenuItem<String>(
+        PopupMenuItem<String>(
           value: 'logout',
           child: Row(
             children: [
@@ -143,6 +144,16 @@ class _MainAppShellState extends State<MainAppShell> {
       return const SizedBox.shrink();
     }
 
+    return ListenableBuilder(
+      listenable: ThemeService.instance,
+      builder: (context, _) {
+        AppColors.setLightMode(ThemeService.instance.isLight);
+        return _buildShell(context);
+      },
+    );
+  }
+
+  Widget _buildShell(BuildContext context) {
     final isWide = MediaQuery.sizeOf(context).width >= 1024;
 
     if (isWide) {
@@ -264,7 +275,7 @@ class _DesktopSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 240,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.panel,
         border: Border(right: BorderSide(color: AppColors.border)),
       ),
@@ -273,10 +284,10 @@ class _DesktopSidebar extends StatelessWidget {
           Container(
             height: 64,
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: AppColors.border)),
             ),
-            child: const Row(
+            child: Row(
               children: [
                 Icon(Icons.shield_outlined, color: AppColors.cyanLight, size: 24),
                 SizedBox(width: 12),
@@ -316,16 +327,16 @@ class _DesktopSidebar extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
+                  Text(
                     'System Status',
                     style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                   ),
                   Row(
                     children: [
                       if (backendLive)
-                        const PulsingDot(color: AppColors.red, size: 8)
+                        PulsingDot(color: AppColors.red, size: 8)
                       else
-                        const Icon(Icons.circle, color: AppColors.textDim, size: 8),
+                        Icon(Icons.circle, color: AppColors.textDim, size: 8),
                       const SizedBox(width: 8),
                       Text(
                         backendLive ? 'LIVE' : 'OFFLINE',
@@ -420,7 +431,7 @@ class _TopNavbar extends StatelessWidget {
     return Container(
       height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 32),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.panel,
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
@@ -428,7 +439,7 @@ class _TopNavbar extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.textPrimary,
               fontSize: 20,
               fontWeight: FontWeight.w600,
@@ -439,18 +450,18 @@ class _TopNavbar extends StatelessWidget {
             width: 320,
             height: 40,
             child: TextField(
-              style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
               cursorColor: AppColors.cyanLight,
               decoration: InputDecoration(
                 hintText: 'Global search...',
-                hintStyle: const TextStyle(color: AppColors.textDim, fontSize: 14, fontWeight: FontWeight.w500),
+                hintStyle: TextStyle(color: AppColors.textDim, fontSize: 14, fontWeight: FontWeight.w500),
                 filled: true,
                 fillColor: AppColors.border,
-                prefixIcon: const Icon(Icons.search, color: AppColors.textDim, size: 18),
+                prefixIcon: Icon(Icons.search, color: AppColors.textDim, size: 18),
                 contentPadding: const EdgeInsets.symmetric(vertical: 0),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: AppColors.borderElevated),
+                  borderSide: BorderSide(color: AppColors.borderElevated),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -513,7 +524,7 @@ class _CopilotNavButtonState extends State<_CopilotNavButton> {
                   color: _hover ? AppColors.cyan.withValues(alpha: 0.35) : AppColors.borderElevated,
                 ),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.auto_awesome, color: AppColors.cyanLight, size: 16),
@@ -622,13 +633,13 @@ class _MobileHeader extends StatelessWidget {
     return Container(
       height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.panel,
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.shield_outlined, color: AppColors.cyanLight, size: 22),
+          Icon(Icons.shield_outlined, color: AppColors.cyanLight, size: 22),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -637,7 +648,7 @@ class _MobileHeader extends StatelessWidget {
               children: [
                 Text(
                   pageTitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -656,10 +667,10 @@ class _MobileHeader extends StatelessWidget {
           ),
           IconButton(
             onPressed: onCopilotTap,
-            icon: const Icon(Icons.auto_awesome, color: AppColors.cyanLight, size: 22),
+            icon: Icon(Icons.auto_awesome, color: AppColors.cyanLight, size: 22),
             tooltip: 'Security Copilot',
           ),
-          const Icon(Icons.notifications_none, color: AppColors.textMuted, size: 22),
+          Icon(Icons.notifications_none, color: AppColors.textMuted, size: 22),
         ],
       ),
     );
@@ -676,7 +687,7 @@ class _MobileBottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 64,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.panel,
         border: Border(top: BorderSide(color: AppColors.border)),
       ),
