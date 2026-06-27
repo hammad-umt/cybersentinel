@@ -21,6 +21,15 @@
   #define APP_ICON "C:\Users\hamma\OneDrive\Desktop\New folder\windows\runner\resources\app_icon.ico"
 #endif
 
+; Validate sources at compile time only (ISCC). Do NOT check paths in InitializeSetup —
+; that runs on the end-user PC and wrongly blocks installs after a successful build.
+#if !FileExists(FLUTTER_BUILD + '\' + MyAppExeName)
+  #error "Flutter release not found. Run: flutter build windows --release"
+#endif
+#if !FileExists(AddBackslash(SourcePath) + ENGINE_BUILD + '\cybersentinel_engine.exe')
+  #error "Engine not found. Run: packaging\windows\build_engine.ps1"
+#endif
+
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
 AppName={#MyAppName}
@@ -80,25 +89,4 @@ end;
 function ShouldInstallNpcap(): Boolean;
 begin
   Result := (not IsNpcapInstalled()) and NpcapInstallerPresent();
-end;
-
-function InitializeSetup(): Boolean;
-begin
-  Result := True;
-  if not FileExists(ExpandConstant('{#FLUTTER_BUILD}\{#MyAppExeName}')) then
-  begin
-    MsgBox('Flutter build not found. Run: flutter build windows --release', mbError, MB_OK);
-    Result := False;
-  end;
-  if not FileExists(ExpandConstant('{#ENGINE_BUILD}\cybersentinel_engine.exe')) then
-  begin
-    MsgBox('Engine not found. Run: packaging\windows\build_engine.ps1', mbError, MB_OK);
-    Result := False;
-  end;
-  if not FileExists(ExpandConstant('{#NPCAP_INSTALLER}')) and
-     not FileExists(ExpandConstant('{#FLUTTER_BUILD}\deps\npcap-installer.exe')) then
-  begin
-    MsgBox('Npcap installer missing. Run: packaging\windows\download_npcap.ps1', mbError, MB_OK);
-    Result := False;
-  end;
 end;
