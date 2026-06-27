@@ -5,6 +5,7 @@ import 'package:cybersentinel/services/api_service.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
 import 'package:cybersentinel/widgets/shared/animated_widgets.dart';
 import 'package:cybersentinel/widgets/shared/cyber_card.dart';
+import 'package:cybersentinel/widgets/shared/page_header.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -102,6 +103,11 @@ class _ReportsContentState extends State<ReportsContent> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const PageHeader(
+            title: 'Security reports',
+            subtitle: 'Export executive summaries and review detection metrics over time.',
+            icon: Icons.description_outlined,
+          ),
           // Header card (Figma: own bordered card)
           FadeSlideIn(
             child: CyberCard(

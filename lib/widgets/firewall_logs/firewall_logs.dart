@@ -1,10 +1,12 @@
 import 'dart:io';
 
+import 'package:cybersentinel/auth/require_auth.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
 import 'package:cybersentinel/services/api_config.dart';
 import 'package:cybersentinel/services/api_service.dart';
 import 'package:cybersentinel/widgets/shared/animated_widgets.dart';
 import 'package:cybersentinel/widgets/shared/cyber_card.dart';
+import 'package:cybersentinel/widgets/shared/page_header.dart';
 import 'package:cybersentinel/widgets/sidebar_panel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -26,27 +28,29 @@ class FirewallLogsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
-      body: SafeArea(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            buildSidebarPanel(context, 2),
-            Expanded(
-              child: Column(
-                children: [
-                  buildTopNavbar(context, 'Firewall Logs'),
-                  Expanded(
-                    child: Container(
-                      color: const Color(0xFF0B1020),
-                      child: const FirewallLogsScreen(),
+    return RequireAuth(
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0A0E1A),
+        body: SafeArea(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              buildSidebarPanel(context, 2),
+              Expanded(
+                child: Column(
+                  children: [
+                    buildTopNavbar(context, 'Firewall Logs'),
+                    Expanded(
+                      child: Container(
+                        color: const Color(0xFF0B1020),
+                        child: const FirewallLogsScreen(),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -84,7 +88,7 @@ class _FirewallLogsScreenState extends State<FirewallLogsScreen> {
     if (!ApiConfig.isConfigured) {
       setState(() {
         _loading = false;
-        _error = 'Set your API key in Settings';
+        _error = 'Please sign in to continue';
       });
       return;
     }
@@ -216,6 +220,11 @@ class _FirewallLogsScreenState extends State<FirewallLogsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const PageHeader(
+                    title: 'Firewall logs & alerts',
+                    subtitle: 'Upload logs, monitor live alerts, and export findings for investigation.',
+                    icon: Icons.shield_outlined,
+                  ),
                   _buildTopActionBar(),
                   const SizedBox(height: 28),
                   Row(

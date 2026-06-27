@@ -6,6 +6,7 @@ import 'package:cybersentinel/services/api_service.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
 import 'package:cybersentinel/widgets/shared/animated_widgets.dart';
 import 'package:cybersentinel/widgets/shared/cyber_card.dart';
+import 'package:cybersentinel/widgets/shared/page_header.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -51,7 +52,7 @@ class _DashboardContentState extends State<DashboardContent> {
     if (!ApiConfig.isConfigured) {
       setState(() {
         _loading = false;
-        _error = 'Set your API key in Settings';
+        _error = 'Please sign in to continue';
       });
       return;
     }
@@ -123,6 +124,19 @@ class _DashboardContentState extends State<DashboardContent> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          FadeSlideIn(
+            child: PageHeader(
+              title: 'Security overview',
+              subtitle: 'Real-time KPIs across packet events, firewall alerts, and threat scoring.',
+              icon: Icons.grid_view_rounded,
+              badge: 'Live',
+              actions: IconButton(
+                onPressed: _loadData,
+                tooltip: 'Refresh dashboard',
+                icon: const Icon(Icons.refresh_rounded, color: AppColors.textMuted),
+              ),
+            ),
+          ),
           // Row 1 — 4 KPI cards (equal width, fixed height)
           SizedBox(
             height: _kpiHeight,

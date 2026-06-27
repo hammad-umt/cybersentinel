@@ -1,6 +1,8 @@
+import 'package:cybersentinel/auth/require_auth.dart';
 import 'package:cybersentinel/services/api_config.dart';
 import 'package:cybersentinel/services/api_service.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
+import 'package:cybersentinel/widgets/shared/page_header.dart';
 import 'package:cybersentinel/widgets/sidebar_panel.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:file_picker/file_picker.dart';
@@ -11,22 +13,24 @@ class VirusScannerPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
-      body: SafeArea(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            buildSidebarPanel(context, 3),
-            Expanded(
-              child: Column(
-                children: [
-                  buildTopNavbar(context, 'Virus Scanner'),
-                  Expanded(child: const VirusScannerContent()),
-                ],
+    return RequireAuth(
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0A0E1A),
+        body: SafeArea(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              buildSidebarPanel(context, 3),
+              Expanded(
+                child: Column(
+                  children: [
+                    buildTopNavbar(context, 'Virus Scanner'),
+                    Expanded(child: const VirusScannerContent()),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -79,7 +83,7 @@ class _VirusScannerContentState extends State<VirusScannerContent> {
   Future<void> _scan() async {
     if (!ApiConfig.isConfigured) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Set your API key in Settings')),
+        const SnackBar(content: Text('Please sign in to continue')),
       );
       return;
     }
@@ -280,44 +284,38 @@ class _VirusScannerContentState extends State<VirusScannerContent> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(40),
+      padding: const EdgeInsets.all(32),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1000),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF0F1420),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12.0),
-                    child: Center(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const PageHeader(
+                title: 'Virus & malware scanner',
+                subtitle: 'Scan files and URLs with VirusTotal threat intelligence integration.',
+                icon: Icons.bug_report_outlined,
+              ),
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F1420),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Center(
                       child: Text(
-                        'Virus & Malware Scanner',
+                        'Upload a file or enter a URL to scan for threats',
                         style: TextStyle(
-                          color: const Color.fromARGB(255, 238, 238, 238),
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
+                          color: Colors.white70,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  Center(
-                    child: Text(
-                      'Upload a file or enter a URL to scan for threats',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
                   const SizedBox(height: 24),
                   MouseRegion(
                     onEnter: (_) => setState(() => isHovered = true),
@@ -504,8 +502,10 @@ class _VirusScannerContentState extends State<VirusScannerContent> {
                 ],
               ),
             ),
+            ],
           ),
         ),
+      ),
     );
   }
 }

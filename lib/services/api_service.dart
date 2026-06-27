@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 
 import 'api_config.dart';
+import 'auth_service.dart';
 import 'ip_intel_parser.dart';
 
 /// Simple helper for all CyberSentinel backend calls.
@@ -13,15 +14,19 @@ class ApiService {
   static final instance = ApiService._();
 
   Map<String, String> get _headers => {
-        'X-API-Key': ApiConfig.apiKey,
+        ...ApiConfig.authHeaders,
         'Content-Type': 'application/json',
       };
 
+  Map<String, String> get _authOnlyHeaders => ApiConfig.authHeaders;
+
   Uri _uri(String path, [Map<String, String>? query]) {
-    return Uri.parse('${ApiConfig.baseUrl}$path').replace(queryParameters: query);
+    return Uri.parse('${ApiConfig.baseUrl}$path')
+        .replace(queryParameters: query);
   }
 
-  Future<Map<String, dynamic>> _get(String path, {Map<String, String>? query}) async {
+  Future<Map<String, dynamic>> _get(String path,
+      {Map<String, String>? query}) async {
     final response = await http.get(_uri(path, query), headers: _headers);
     return _parseJson(response);
   }
@@ -41,16 +46,26 @@ class ApiService {
   }
 
   Map<String, dynamic> _parseJson(http.Response response) {
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, dynamic>) {
-      if (response.statusCode >= 400) {
-        throw Exception('Request failed (${response.statusCode})');
+    Map<String, dynamic>? data;
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        data = decoded;
+      } else if (response.statusCode < 400) {
+        return {'success': true, 'data': decoded};
       }
-      return {'success': true, 'data': decoded};
+    } catch (_) {}
+
+    if (response.statusCode == 401) {
+      AuthService.instance.handleUnauthorized();
+      final detail = data?['detail']?.toString();
+      throw AuthException(
+        detail ?? 'Session expired. Please log in again.',
+      );
     }
-    final data = decoded;
-    if (response.statusCode >= 400 || data['success'] == false) {
-      final detail = data['detail'];
+
+    if (response.statusCode >= 400 || data?['success'] == false) {
+      final detail = data?['detail'];
       final message = detail is List
           ? detail.map((e) => e.toString()).join(', ')
           : detail?.toString();
@@ -59,7 +74,8 @@ class ApiService {
       }
       throw Exception(message ?? 'Request failed (${response.statusCode})');
     }
-    return data;
+
+    return data ?? {'success': true};
   }
 
   /// Pulls a list of maps from common API response shapes.
@@ -165,7 +181,7 @@ class ApiService {
       'POST',
       _uri('/api/v1/firewall/analyze', {'source': source}),
     );
-    request.headers['X-API-Key'] = ApiConfig.apiKey;
+    request.headers.addAll(_authOnlyHeaders);
     request.files.add(http.MultipartFile.fromBytes(
       'file',
       file.bytes!,
@@ -180,8 +196,12 @@ class ApiService {
   Future<List<int>> downloadFirewallAlertsCsv() async {
     final response = await http.get(
       _uri('/api/v1/firewall/alerts.csv'),
-      headers: {'X-API-Key': ApiConfig.apiKey},
+      headers: _authOnlyHeaders,
     );
+    if (response.statusCode == 401) {
+      await AuthService.instance.handleUnauthorized();
+      throw AuthException('Session expired. Please log in again.');
+    }
     if (response.statusCode >= 400) {
       throw Exception('Export failed (${response.statusCode})');
     }
@@ -221,7 +241,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> scanFile(PlatformFile file) async {
     final request = http.MultipartRequest('POST', _uri('/api/v1/intel/file'));
-    request.headers['X-API-Key'] = ApiConfig.apiKey;
+    request.headers.addAll(_authOnlyHeaders);
     request.files.add(http.MultipartFile.fromBytes(
       'file',
       file.bytes!,
@@ -258,14 +278,14 @@ class ApiService {
     required String targetIp,
     required String action,
     required String reason,
-    String requestedBy = 'flutter-dashboard',
+    String? requestedBy,
     bool execute = false,
   }) =>
       _post('/api/v1/response/actions', body: {
         'target_ip': targetIp,
         'action': action,
         'reason': reason,
-        'requested_by': requestedBy,
+        'requested_by': requestedBy ?? AuthService.instance.email,
         'execute': execute,
       });
 
@@ -274,8 +294,12 @@ class ApiService {
   Future<List<int>> downloadSummaryReport() async {
     final response = await http.get(
       _uri('/api/v1/reports/summary.pdf'),
-      headers: {'X-API-Key': ApiConfig.apiKey},
+      headers: _authOnlyHeaders,
     );
+    if (response.statusCode == 401) {
+      await AuthService.instance.handleUnauthorized();
+      throw AuthException('Session expired. Please log in again.');
+    }
     if (response.statusCode >= 400) {
       throw Exception('Report download failed (${response.statusCode})');
     }

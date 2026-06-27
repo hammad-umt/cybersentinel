@@ -4,6 +4,7 @@ import 'package:cybersentinel/services/ip_intel_parser.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
 import 'package:cybersentinel/widgets/shared/animated_widgets.dart';
 import 'package:cybersentinel/widgets/shared/cyber_card.dart';
+import 'package:cybersentinel/widgets/shared/page_header.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -33,7 +34,7 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
     if (ip.isEmpty) return;
 
     if (!ApiConfig.isConfigured) {
-      setState(() => _error = 'Set your API key in Settings');
+      setState(() => _error = 'Please sign in to continue');
       return;
     }
 
@@ -79,6 +80,11 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
           constraints: const BoxConstraints(maxWidth: 1152),
           child: Column(
             children: [
+              const PageHeader(
+                title: 'IP threat analysis',
+                subtitle: 'Unified threat score, geo intelligence, and reputation context for any IP.',
+                icon: Icons.location_on_outlined,
+              ),
               FadeSlideIn(
                 child: CyberCard(
                   padding: const EdgeInsets.all(16),

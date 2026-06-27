@@ -1,5 +1,8 @@
+import 'package:cybersentinel/auth/require_auth.dart';
 import 'package:cybersentinel/services/api_config.dart';
 import 'package:cybersentinel/services/api_service.dart';
+import 'package:cybersentinel/services/auth_service.dart';
+import 'package:cybersentinel/widgets/shared/page_header.dart';
 import 'package:cybersentinel/widgets/sidebar_panel.dart';
 import 'package:flutter/material.dart';
 
@@ -8,22 +11,24 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
-      body: SafeArea(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            buildSidebarPanel(context, 6),
-            Expanded(
-              child: Column(
-                children: [
-                  buildTopNavbar(context, 'Settings'),
-                  Expanded(child: const SettingsContent()),
-                ],
+    return RequireAuth(
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0A0E1A),
+        body: SafeArea(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              buildSidebarPanel(context, 6),
+              Expanded(
+                child: Column(
+                  children: [
+                    buildTopNavbar(context, 'Settings'),
+                    Expanded(child: const SettingsContent()),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -44,27 +49,21 @@ class _SettingsContentState extends State<SettingsContent> {
   String selectedTheme = 'dark';
 
   final _baseUrlController = TextEditingController();
-  final _apiKeyController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _baseUrlController.text = ApiConfig.baseUrl;
-    _apiKeyController.text = ApiConfig.apiKey;
   }
 
   @override
   void dispose() {
     _baseUrlController.dispose();
-    _apiKeyController.dispose();
     super.dispose();
   }
 
   Future<void> _saveSettings() async {
-    await ApiConfig.save(
-      url: _baseUrlController.text,
-      key: _apiKeyController.text,
-    );
+    await ApiConfig.saveBaseUrl(_baseUrlController.text);
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -95,6 +94,14 @@ class _SettingsContentState extends State<SettingsContent> {
         padding: const EdgeInsets.all(40),
         child: Column(
           children: [
+            const SizedBox(
+              width: 1000,
+              child: PageHeader(
+                title: 'Settings',
+                subtitle: 'Backend connection, session management, and application preferences.',
+                icon: Icons.settings_outlined,
+              ),
+            ),
             Container(
               width: 1000,
               decoration: BoxDecoration(
@@ -140,19 +147,53 @@ class _SettingsContentState extends State<SettingsContent> {
                     style: const TextStyle(color: Color(0xFFD1D5DB)),
                   ),
                   const SizedBox(height: 16),
-                  const Text('CyberSentinel API Key', style: TextStyle(color: Colors.white, fontSize: 14)),
+                  const Text(
+                    'Signed in as',
+                    style: TextStyle(color: Colors.white, fontSize: 14),
+                  ),
                   const SizedBox(height: 8),
-                  TextField(
-                    controller: _apiKeyController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      filled: true,
-                      fillColor: Color(0xFF1A1F2E),
-                      hintText: 'Your X-API-Key from .env',
-                      hintStyle: TextStyle(color: Color(0xFF9CA3AF)),
-                      border: OutlineInputBorder(borderSide: BorderSide.none),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1F2E),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    style: const TextStyle(color: Color(0xFFD1D5DB)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          AuthService.instance.email,
+                          style: const TextStyle(
+                            color: Color(0xFFD1D5DB),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          AuthService.instance.role,
+                          style: const TextStyle(
+                            color: Color(0xFF9CA3AF),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () async {
+                        await AuthService.instance.logout();
+                      },
+                      icon: const Icon(Icons.logout, color: Color(0xFFF87171), size: 18),
+                      label: const Text(
+                        'Log out',
+                        style: TextStyle(color: Color(0xFFF87171)),
+                      ),
+                    ),
                   ),
                 ],
               ),

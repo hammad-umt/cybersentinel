@@ -1,8 +1,10 @@
 import 'package:cybersentinel/services/api_config.dart';
 import 'package:cybersentinel/services/packet_capture_service.dart';
+import 'package:cybersentinel/auth/require_auth.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
 import 'package:cybersentinel/widgets/shared/animated_widgets.dart';
 import 'package:cybersentinel/widgets/shared/cyber_card.dart';
+import 'package:cybersentinel/widgets/shared/page_header.dart';
 import 'package:cybersentinel/widgets/sidebar_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -21,22 +23,24 @@ class PacketTracingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: SafeArea(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            buildSidebarPanel(context, 1),
-            Expanded(
-              child: Column(
-                children: [
-                  buildTopNavbar(context, 'Packet Tracing'),
-                  const Expanded(child: PacketTracingScreen()),
-                ],
+    return RequireAuth(
+      child: Scaffold(
+        backgroundColor: AppColors.bg,
+        body: SafeArea(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              buildSidebarPanel(context, 1),
+              Expanded(
+                child: Column(
+                  children: [
+                    buildTopNavbar(context, 'Packet Tracing'),
+                    const Expanded(child: PacketTracingScreen()),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -101,61 +105,173 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
 
   bool get _isCapturing => _capture.isCapturing;
 
-  Future<void> _showCaptureSettings() async {
-    await showDialog<void>(
+  Future<bool> _showCaptureSettingsDialog({required bool forStart}) async {
+    await _capture.loadInterfaces();
+    if (_capture.interfaces.isNotEmpty && _capture.selectedInterfaceIndex == null) {
+      _capture.selectInterface(_capture.interfaces.first.index);
+    }
+    if (mounted) setState(() {});
+
+    if (!mounted) return false;
+
+    var useTshark = _capture.useTshark;
+
+    final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.card,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppColors.cardRadius),
-          side: const BorderSide(color: AppColors.border),
-        ),
-        title: const Text(
-          'Capture Settings',
-          style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
-        ),
-        content: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildInterfaceSelector(compact: false),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _bpfController,
-                enabled: !_isCapturing,
-                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-                decoration: _fieldDecoration(
-                  label: 'BPF Filter',
-                  hint: 'e.g. tcp port 443',
+      barrierDismissible: !forStart,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return AlertDialog(
+            backgroundColor: AppColors.panel,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: AppColors.cyan.withValues(alpha: 0.25)),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.cyan.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.settings_ethernet, color: AppColors.cyanLight, size: 20),
                 ),
-                onChanged: _capture.setBpfFilter,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    forStart ? 'Start Live Capture' : 'Capture Settings',
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    forStart
+                        ? 'Choose a network interface and capture engine before starting.'
+                        : 'Adjust interface, filter, and capture engine.',
+                    style: const TextStyle(color: AppColors.textMuted, fontSize: 13, height: 1.4),
+                  ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'Network interface',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildInterfaceSelector(compact: false, inDialog: true),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _bpfController,
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                    decoration: _fieldDecoration(
+                      label: 'BPF Filter (optional)',
+                      hint: 'e.g. tcp port 443',
+                    ),
+                    onChanged: _capture.setBpfFilter,
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: useTshark
+                            ? AppColors.cyan.withValues(alpha: 0.4)
+                            : AppColors.borderElevated,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Use Tshark engine',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                useTshark
+                                    ? 'Deep packet parsing via Tshark'
+                                    : 'Standard capture (faster, lighter)',
+                                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: useTshark,
+                          onChanged: (v) {
+                            setDialogState(() => useTshark = v);
+                            _capture.setUseTshark(v);
+                          },
+                          activeThumbColor: AppColors.cyan,
+                          activeTrackColor: AppColors.cyan.withValues(alpha: 0.35),
+                          inactiveThumbColor: AppColors.textDim,
+                          inactiveTrackColor: AppColors.borderElevated,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              FilterChip(
-                label: const Text('Use Tshark'),
-                selected: _capture.useTshark,
-                onSelected: _isCapturing ? null : _capture.setUseTshark,
-                selectedColor: AppColors.cyan.withValues(alpha: 0.15),
-                checkmarkColor: AppColors.cyan,
-                side: const BorderSide(color: AppColors.borderElevated),
-                labelStyle: TextStyle(
-                  color: _capture.useTshark ? AppColors.cyanLight : AppColors.textMuted,
-                  fontSize: 13,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(
+                  forStart ? 'Cancel' : 'Close',
+                  style: const TextStyle(color: AppColors.textMuted),
                 ),
               ),
+              if (forStart)
+                ElevatedButton.icon(
+                  onPressed: _capture.interfaces.isEmpty ||
+                          _capture.selectedInterfaceIndex == null
+                      ? null
+                      : () => Navigator.pop(ctx, true),
+                  icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                  label: const Text('Start Capture'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.cyan,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: AppColors.borderElevated,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                )
+              else
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Done', style: TextStyle(color: AppColors.cyanLight)),
+                ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Done', style: TextStyle(color: AppColors.cyanLight)),
-          ),
-        ],
+          );
+        },
       ),
     );
+
+    return result ?? false;
   }
 
   List<LivePacket> get _filteredPackets {
@@ -178,17 +294,15 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
   Future<void> _toggleCapture() async {
     if (!ApiConfig.isConfigured) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Set your API key in Settings')),
+        const SnackBar(content: Text('Please sign in to continue')),
       );
       return;
     }
 
     try {
       if (!_isCapturing) {
-        if (_capture.selectedInterfaceIndex == null) {
-          await _showCaptureSettings();
-          return;
-        }
+        final confirmed = await _showCaptureSettingsDialog(forStart: true);
+        if (!confirmed || !mounted) return;
         await _capture.startCapture();
       } else {
         await _capture.stopCapture();
@@ -292,7 +406,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
 
           final captureBtn = ElevatedButton.icon(
             onPressed: _toggleCapture,
-            onLongPress: _showCaptureSettings,
+            onLongPress: () => _showCaptureSettingsDialog(forStart: false),
             icon: Icon(_isCapturing ? Icons.pause : Icons.play_arrow, size: 20),
             label: Text(_isCapturing ? 'Stop Capture' : 'Start Capture'),
             style: ElevatedButton.styleFrom(
@@ -366,7 +480,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
     );
   }
 
-  Widget _buildInterfaceSelector({bool compact = true}) {
+  Widget _buildInterfaceSelector({bool compact = true, bool inDialog = false}) {
     if (_capture.isLoadingInterfaces) {
       return const Row(
         mainAxisSize: MainAxisSize.min,
@@ -391,7 +505,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
           const Icon(Icons.settings_ethernet, color: AppColors.textMuted, size: 20),
           const SizedBox(width: 8),
           const Expanded(
-            child: Text('No interfaces', style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
+            child: Text('No interfaces found', style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
           ),
           TextButton(
             onPressed: _capture.loadInterfaces,
@@ -401,19 +515,18 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
       );
     }
 
-    final selected = _capture.selectedInterfaceIndex;
-    if (selected == null) {
-      return const Text('Select an interface', style: TextStyle(color: AppColors.textMuted, fontSize: 14));
-    }
+    final selected = _capture.selectedInterfaceIndex ?? _capture.interfaces.first.index;
 
     return Row(
       children: [
-        const Icon(Icons.settings_ethernet, color: AppColors.textMuted, size: 20),
-        const SizedBox(width: 8),
+        if (compact) ...[
+          const Icon(Icons.settings_ethernet, color: AppColors.textMuted, size: 20),
+          const SizedBox(width: 8),
+        ],
         Expanded(
           child: _styledDropdown<int>(
             value: selected,
-            enabled: !_isCapturing,
+            enabled: inDialog || !_isCapturing,
             items: [
               for (final iface in _capture.interfaces)
                 DropdownMenuItem(
@@ -616,6 +729,11 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const PageHeader(
+              title: 'Live packet tracing',
+              subtitle: 'Capture network traffic, classify flows in real time, and inspect packet details.',
+              icon: Icons.account_tree_outlined,
+            ),
             _buildControlBar(),
             const SizedBox(height: _sectionGap),
             Expanded(

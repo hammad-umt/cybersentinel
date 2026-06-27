@@ -1,3 +1,4 @@
+import 'package:cybersentinel/auth/require_auth.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
 import 'package:cybersentinel/widgets/ip_analysis/ip_analysis_content.dart';
 import 'package:flutter/material.dart';
@@ -15,9 +16,11 @@ class IPLogAnalysisPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: AppColors.bg,
-      body: IPAnalysisContent(),
+    return RequireAuth(
+      child: const Scaffold(
+        backgroundColor: AppColors.bg,
+        body: IPAnalysisContent(),
+      ),
     );
   }
 }

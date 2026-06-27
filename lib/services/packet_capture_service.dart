@@ -179,7 +179,7 @@ class PacketCaptureService extends ChangeNotifier {
 
   Future<void> startCapture() async {
     if (!ApiConfig.isConfigured) {
-      throw Exception('Set your API key in Settings');
+      throw Exception('Please sign in to continue');
     }
 
     lastError = null;
