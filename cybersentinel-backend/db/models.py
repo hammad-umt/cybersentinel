@@ -303,3 +303,41 @@ class ResponseAction(Base):
             f"<ResponseAction id={self.id!r} target_ip={self.target_ip!r} "
             f"action={self.action!r} status={self.status!r}>"
         )
+
+
+# ---------------------------------------------------------------------------
+# Table 6 — Users (JWT authentication — Sprint 3)
+# ---------------------------------------------------------------------------
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="Analyst"
+    )  # Administrator | Analyst | SeniorManagement
+    password_reset_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    password_reset_expires: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(32), default=_now_utc, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<User id={self.id!r} email={self.email!r} role={self.role!r}>"
+
+
+# ---------------------------------------------------------------------------
+# Table 7 — Per-user configuration (encrypted API keys, preferences)
+# ---------------------------------------------------------------------------
+
+class UserConfiguration(Base):
+    __tablename__ = "user_configurations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), unique=True, index=True, nullable=False)
+    encrypted_vt_key: Mapped[str | None] = mapped_column(Text)
+    encrypted_abuse_key: Mapped[str | None] = mapped_column(Text)
+    theme_preference: Mapped[str] = mapped_column(String(8), default="Dark")
+    background_monitoring: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[str] = mapped_column(String(32), default=_now_utc, nullable=False)
+

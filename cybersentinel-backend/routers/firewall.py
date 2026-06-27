@@ -67,6 +67,13 @@ IntelServiceDep = Annotated[ThreatIntelService, Depends(get_threat_intel_service
     summary="Analyze an uploaded firewall log",
     dependencies=[Depends(require_role("user"))],
 )
+@router.post(
+    "/upload",
+    response_model=FirewallAnalyzeResponse,
+    summary="Analyze an uploaded firewall log (doc alias)",
+    dependencies=[Depends(require_role("user"))],
+    include_in_schema=True,
+)
 async def analyze_firewall_log(
     service: ServiceDep,
     file: UploadFile = File(..., description="Windows pfirewall, Linux iptables/UFW, or CSV-like log file"),

@@ -28,6 +28,25 @@ htmlcov/
 # Datasets and trained ML artifacts are tracked for this project.
 # Large CSV/model binaries are routed through Git LFS in .gitattributes.
 
+# Flutter / Dart client (separate from backend scope)
+.dart_tool/
+.flutter-plugins-dependencies
+build/
+android/
+ios/
+lib/
+linux/
+macos/
+web/
+windows/
+pubspec.yaml
+pubspec.lock
+analysis_options.yaml
+test/
+
+# Editor / local tooling
+.cursor/
+
 # OS/editor noise
 .DS_Store
 Thumbs.db

@@ -192,7 +192,7 @@ def get_network_interfaces() -> List[NetworkInterface]:
     # Minimal fallback
     return [NetworkInterface(
         index=0,
-        name="Ethernet",
+        name="Wifi",
         description="Default network interface",
         ip_addresses=[],
     )]

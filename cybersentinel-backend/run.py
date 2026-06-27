@@ -24,6 +24,7 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG,
         reload_dirs=[
+            str(BASE_DIR),
             str(BASE_DIR / "core"),
             str(BASE_DIR / "db"),
             str(BASE_DIR / "models"),

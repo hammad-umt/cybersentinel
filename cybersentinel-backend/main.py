@@ -19,9 +19,11 @@ from fastapi.responses import JSONResponse, Response
 from loguru import logger
 
 from core.config import settings
-from core.security import enforce_read_only_analyst, require_role, resolve_api_role
-from db.database import check_database, create_tables, engine
+from core.openapi import configure_openapi
+from core.security import enforce_read_only_analyst, require_role, resolve_request_role
+from db.database import AsyncSessionLocal, check_database, create_tables, engine
 from models.loader import ModelRegistry
+from routers.auth import router as auth_router
 from routers.copilot import router as copilot_router
 from routers.dashboard import router as dashboard_router
 from routers.firewall import router as firewall_router
@@ -31,6 +33,7 @@ from routers.capture import router as capture_router
 from routers.reports import router as reports_router
 from routers.response import router as response_router
 from routers.threat import router as threat_router
+from services.auth_service import ensure_default_admin
 from services.packet_capture_service import set_background_event_loop
 
 
@@ -40,8 +43,22 @@ STARTED_AT = monotonic()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting {name} v{version}", name=settings.APP_NAME, version=settings.APP_VERSION)
+    logger.info("Database provider: {provider}", provider=settings.database_provider)
     set_background_event_loop(asyncio.get_running_loop())
     await create_tables()
+    async with AsyncSessionLocal() as session:
+        await ensure_default_admin(session)
+    if settings.email_configured:
+        logger.info(
+            "Password reset email enabled via {provider} (from {from_email})",
+            provider=settings.email_provider,
+            from_email=settings.SMTP_FROM_EMAIL,
+        )
+    else:
+        logger.error(
+            "Password reset email is NOT configured. Add RESEND_API_KEY or SMTP_* to .env "
+            "before using POST /api/v1/auth/forgot-password."
+        )
     app.state.models = await ModelRegistry.load()
     yield
     logger.info("Shutting down {name}", name=settings.APP_NAME)
@@ -57,14 +74,7 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
 )
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
-    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
-    allow_headers=["*"],
-)
+configure_openapi(app)
 
 
 _rate_limit_buckets: dict[str, deque[float]] = defaultdict(deque)
@@ -79,17 +89,28 @@ PUBLIC_PATHS = {
 }
 
 
+AUTH_PUBLIC_ROUTES = {
+    ("POST", "/api/v1/auth/token"),
+    ("POST", "/api/v1/auth/register"),
+    ("POST", "/api/v1/auth/forgot-password"),
+    ("POST", "/api/v1/auth/reset-password"),
+    ("GET", "/api/v1/auth/reset-password/validate"),
+}
+
+
 @app.middleware("http")
 async def api_auth_middleware(request: Request, call_next):
     path = request.url.path
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     if path.startswith("/api/v1"):
-        if not settings.API_KEY:
-            return JSONResponse(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={"success": False, "detail": "API key is not configured."},
-            )
-        role = resolve_api_role(
-            request.headers.get("X-API-Key"),
+        if (request.method, path) in AUTH_PUBLIC_ROUTES:
+            return await call_next(request)
+
+        role = resolve_request_role(
+            request.headers.get("X-API-Key") if settings.USE_API_KEY_AUTH else None,
+            request.headers.get("Authorization"),
         )
         if role is None:
             client_ip = request.client.host if request.client else "unknown"
@@ -101,9 +122,16 @@ async def api_auth_middleware(request: Request, call_next):
             )
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"success": False, "detail": "Invalid or missing API key. Use header: X-API-Key: your-api-key"},
+                content={
+                    "success": False,
+                    "detail": (
+                        "Authentication required. Register at POST /api/v1/auth/register, "
+                        "login at POST /api/v1/auth/token, then send Authorization: Bearer <token>."
+                    ),
+                },
             )
         request.state.auth_role = role
+
     response = await call_next(request)
     return response
 
@@ -129,6 +157,19 @@ async def production_safety_middleware(request: Request, call_next):
     return response
 
 
+# Register CORS last so it runs first and handles browser preflight (OPTIONS)
+# before the API-key middleware below.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+
+app.include_router(auth_router)
 app.include_router(packet_router)
 app.include_router(firewall_router)
 app.include_router(capture_router)
@@ -197,6 +238,9 @@ async def health(request: Request) -> dict[str, Any]:
         "version": settings.APP_VERSION,
         "uptime_seconds": round(monotonic() - STARTED_AT, 2),
         "database": "ok" if database_ok else "unavailable",
+        "database_provider": settings.database_provider,
+        "auth": "jwt",
+        "public_signup": settings.ALLOW_PUBLIC_SIGNUP,
         "models": {
             "packet_classifier": {
                 "available": models.packet_classifier_available,

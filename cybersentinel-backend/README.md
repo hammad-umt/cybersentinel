@@ -64,16 +64,41 @@ model is unavailable. Endpoints that need that model return HTTP 503.
 
 ## Security and Access Control
 
-All `/api/v1/*` routes require a valid API key header:
+CyberSentinel uses **JWT Bearer authentication** (Sprint 3):
 
-- `X-Admin-Api-Key` — full read/write access
-- `X-Analyst-Api-Key` — read-only (GET/HEAD/OPTIONS only)
+1. **Login** — `POST /api/v1/auth/token` with form fields `username` (your **email**) and `password`
+2. **Use token** — `Authorization: Bearer <access_token>` on all `/api/v1/*` routes (except public auth routes)
+3. **Swagger UI** — open http://localhost:8000/docs → call `POST /api/v1/auth/token` to get a token → click **Authorize** at the top → paste the `access_token`
 
-Public unauthenticated routes: `/`, `/health`, `/docs`, `/redoc`, `/openapi.json`.
+Default admin on first startup: `DEFAULT_ADMIN_EMAIL` / `DEFAULT_ADMIN_PASSWORD` in `.env` (default `admin@cybersentinel.local` / `admin123`).
 
-Admin-only write routes include capture start/stop, PCAP import, firewall monitor
-controls, response action creation, alert acknowledgement, model reload, and PDF
-reports.
+Public unauthenticated routes: `/`, `/health`, `/docs`, auth register/login/reset endpoints.
+
+## Backend tests
+
+Full test plan: [`tests/README.md`](tests/README.md)
+
+```powershell
+cd cybersentinel-backend
+.\.venv\Scripts\python.exe -m pytest tests/ -v
+```
+
+- **96+ automated test cases** with explicit pass/fail (fixed HTTP status codes)
+- Runs on GitHub Actions (`.github/workflows/backend-tests.yml`)
+- Uses in-memory SQLite + fake ML models — no Supabase or `.joblib` files required
+
+## Database (Supabase)
+
+Version 1.0 deployment uses **Supabase (managed PostgreSQL)**. Set in `.env`:
+
+```env
+DATABASE_URL=postgresql+asyncpg://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres
+```
+
+The backend auto-converts `postgresql://` URLs from the Supabase dashboard to the async driver.
+Tables (including `users` for JWT) are created automatically on startup.
+
+SQLite (`sqlite+aiosqlite:///./cybersentinel.db`) remains supported for offline local dev only.
 
 ### Encrypt secrets at rest (one-time setup)
 

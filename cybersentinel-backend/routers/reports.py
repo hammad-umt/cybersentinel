@@ -36,6 +36,11 @@ ReportServiceDep = Annotated[ReportService, Depends(get_report_service)]
     summary="Download SOC summary PDF report",
     response_class=StreamingResponse,
 )
+@router.get(
+    "/pdf",
+    summary="Download SOC summary PDF report (doc alias)",
+    response_class=StreamingResponse,
+)
 async def download_summary_pdf(service: ReportServiceDep) -> StreamingResponse:
     try:
         pdf_bytes = await service.summary_pdf()

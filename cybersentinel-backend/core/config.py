@@ -87,19 +87,23 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
-    # ------------------------------------------------------------------
-    # Database
-    # SQLite by default so the project runs without a database server.
-    # Switch to postgresql+asyncpg://... for production.
-    # ------------------------------------------------------------------
+    # Supabase (PostgreSQL) is the primary deployment database per FYP docs.
+    # Set DATABASE_URL in .env to your Supabase connection string.
+    # SQLite fallback allows offline local development without cloud DB.
     DATABASE_URL: str = f"sqlite+aiosqlite:///{BASE_DIR / 'cybersentinel.db'}"
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
-    def resolve_sqlite_url(cls, value: str) -> str:
-        """Resolve relative SQLite database paths against the backend root."""
+    def normalize_database_url(cls, value: str) -> str:
+        """Resolve SQLite paths and convert Supabase postgres:// URLs for asyncpg."""
         if not isinstance(value, str):
             return value
+
+        # Supabase dashboard often gives postgresql:// — ensure async driver.
+        if value.startswith("postgresql://"):
+            value = "postgresql+asyncpg://" + value.removeprefix("postgresql://")
+        elif value.startswith("postgres://"):
+            value = "postgresql+asyncpg://" + value.removeprefix("postgres://")
 
         prefixes = ("sqlite+aiosqlite:///", "sqlite:///")
         for prefix in prefixes:
@@ -111,6 +115,81 @@ class Settings(BaseSettings):
                         db_path = BASE_DIR / db_path
                     return f"{prefix}{db_path.resolve()}"
         return value
+
+    @property
+    def database_provider(self) -> str:
+        if self.DATABASE_URL.startswith("sqlite"):
+            return "sqlite"
+        if "supabase" in self.DATABASE_URL.lower():
+            return "supabase"
+        if self.DATABASE_URL.startswith("postgresql"):
+            return "postgresql"
+        return "unknown"
+
+    @property
+    def is_supabase(self) -> bool:
+        return self.database_provider == "supabase"
+
+    @property
+    def uses_cloud_postgres(self) -> bool:
+        return self.database_provider in {"supabase", "postgresql"}
+
+    # ------------------------------------------------------------------
+    # JWT Authentication (Sprint 3)
+    # ------------------------------------------------------------------
+    JWT_SECRET_KEY: str = "change-me-in-production-use-openssl-rand-hex-32"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 30
+    DEFAULT_ADMIN_EMAIL: str = "admin@cybersentinel.local"
+    DEFAULT_ADMIN_USERNAME: str = ""  # legacy env; mapped to email when set
+    DEFAULT_ADMIN_PASSWORD: str = "admin123"
+    ALLOW_PUBLIC_SIGNUP: bool = True
+    USE_API_KEY_AUTH: bool = False
+
+    # ------------------------------------------------------------------
+    # Email (password reset)
+    # ------------------------------------------------------------------
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_FROM_NAME: str = "CyberSentinel"
+    SMTP_USE_TLS: bool = True
+    FRONTEND_RESET_PASSWORD_URL: str = "http://localhost:8080/reset-password"
+    RESEND_API_KEY: str = ""
+
+    @property
+    def resend_configured(self) -> bool:
+        return bool(self.RESEND_API_KEY.strip() and self.SMTP_FROM_EMAIL.strip())
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.SMTP_HOST.strip() and self.SMTP_FROM_EMAIL.strip())
+
+    @property
+    def email_configured(self) -> bool:
+        return self.resend_configured or self.smtp_configured
+
+    @property
+    def email_provider(self) -> str:
+        if self.resend_configured:
+            return "resend"
+        if self.smtp_configured:
+            return "smtp"
+        return "none"
+
+    @property
+    def default_admin_email(self) -> str:
+        """Resolve admin email from DEFAULT_ADMIN_EMAIL or legacy DEFAULT_ADMIN_USERNAME."""
+        email = self.DEFAULT_ADMIN_EMAIL.strip()
+        if email and email != "admin@cybersentinel.local":
+            return email.lower()
+        legacy = self.DEFAULT_ADMIN_USERNAME.strip()
+        if legacy:
+            return legacy.lower() if "@" in legacy else f"{legacy.lower()}@cybersentinel.local"
+        return email.lower()
 
     # ------------------------------------------------------------------
     # ML model paths
