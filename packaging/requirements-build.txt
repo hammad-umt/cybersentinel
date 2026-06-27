@@ -1,0 +1,3 @@
+# PyInstaller build dependencies (not required for normal backend dev).
+pyinstaller>=6.10.0
+python-dotenv>=1.0.0

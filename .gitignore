@@ -18,6 +18,14 @@
 logs/
 uploads/
 
+# PyInstaller / desktop packaging outputs (never commit)
+cybersentinel-backend/dist/
+cybersentinel-backend/build/
+packaging/**/dist/
+packaging/**/build/
+packaging/**/output/
+packaging/**/*.exe
+
 # Test/type/lint caches
 .pytest_cache/
 .mypy_cache/
@@ -28,21 +36,9 @@ htmlcov/
 # Datasets and trained ML artifacts are tracked for this project.
 # Large CSV/model binaries are routed through Git LFS in .gitattributes.
 
-# Flutter / Dart client (separate from backend scope)
-.dart_tool/
-.flutter-plugins-dependencies
-build/
-android/
-ios/
-lib/
-linux/
-macos/
-web/
-windows/
-pubspec.yaml
-pubspec.lock
-analysis_options.yaml
-test/
+# Flutter / Dart client at repo root (separate from backend scope)
+/linux/
+/windows/
 
 # Editor / local tooling
 .cursor/

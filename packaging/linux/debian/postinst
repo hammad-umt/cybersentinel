@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+if [ -x /opt/cybersentinel/engine/cybersentinel_engine ]; then
+  setcap cap_net_raw,cap_net_admin+eip /opt/cybersentinel/engine/cybersentinel_engine || true
+fi

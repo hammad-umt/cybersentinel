@@ -33,10 +33,13 @@ To reproduce model artifacts:
 
 If trained artifacts are needed in deployment, store them outside GitHub or use Git LFS/release assets.
 
-## Docker / AWS
+## Desktop release (Flutter + bundled backend)
 
-```powershell
-docker compose up --build
-```
+End users run a **local engine** on their PC; the database stays on **Supabase**.
 
-See `cybersentinel-backend/DEPLOY.md` for ECS Fargate + ECR deployment.
+| Platform | Build docs |
+|----------|------------|
+| Windows | `packaging/windows/build_engine.ps1` + Inno Setup (`packaging/windows/installer.iss`) |
+| Linux | `packaging/linux/build_engine.sh` + `packaging/linux/bundle_release.sh` |
+
+See `packaging/README.md` for the full desktop packaging guide.

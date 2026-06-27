@@ -1,0 +1,15 @@
+Place `npcap-installer.exe` here (not committed to git — large binary).
+
+Download automatically:
+
+```powershell
+cd C:\Users\hamma\OneDrive\Desktop\cybersentinel\packaging\windows
+.\download_npcap.ps1
+```
+
+Or from the Flutter project:
+
+```powershell
+cd "C:\Users\hamma\OneDrive\Desktop\New folder"
+.\scripts\sync_npcap.ps1
+```

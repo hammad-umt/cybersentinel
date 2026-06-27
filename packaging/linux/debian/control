@@ -1,0 +1,9 @@
+Package: cybersentinel
+Version: 1.0.0
+Section: net
+Priority: optional
+Architecture: amd64
+Depends: libgtk-3-0, libpcap0.8, libcap2-bin
+Maintainer: CyberSentinel <admin@cybersentinel.local>
+Description: CyberSentinel network security desktop app
+ Bundled Flutter UI with local FastAPI engine and Supabase cloud database.
