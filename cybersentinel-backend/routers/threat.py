@@ -15,6 +15,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import require_role
+from core.ttl_cache import get_or_set
 from core.tenant import get_current_user_id
 from db.database import get_db
 from schemas.auth import ThreatQueueRequest, ThreatQueueResponse
@@ -89,11 +90,17 @@ async def score_ip(ip: str, service: ServiceDep) -> UnifiedThreatScore:
     dependencies=[Depends(require_role("user"))],
 )
 async def top_threats(
+    request: Request,
     service: ServiceDep,
     limit: int = Query(default=20, ge=1, le=100),
 ) -> TopThreatsResponse:
+    user_id = get_current_user_id(request)
     try:
-        return await service.top(limit=limit)
+        return await get_or_set(
+            f"threat:top:{user_id}:{limit}",
+            ttl_seconds=5.0,
+            factory=lambda: service.top(limit=limit),
+        )
     except Exception as exc:
         logger.exception("Unexpected error in top_threats")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))

@@ -44,7 +44,13 @@ STARTED_AT = monotonic()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting {name} v{version}", name=settings.APP_NAME, version=settings.APP_VERSION)
-    logger.info("Database provider: {provider}", provider=settings.database_provider)
+    logger.info(
+        "Database: {provider} ({url})",
+        provider=settings.database_provider,
+        url=settings.DATABASE_URL.split("@")[-1] if "@" in settings.DATABASE_URL else "configured",
+    )
+    if settings.database_provider == "sqlite":
+        logger.warning("SQLite is only allowed for automated tests — use Supabase in production.")
     set_background_event_loop(asyncio.get_running_loop())
     await create_tables()
     async with AsyncSessionLocal() as session:
@@ -60,8 +66,23 @@ async def lifespan(app: FastAPI):
             "Password reset email is NOT configured. Add RESEND_API_KEY or SMTP_* to .env "
             "before using POST /api/v1/auth/forgot-password."
         )
-    app.state.models = await ModelRegistry.load()
+
+    # Empty registry so /health responds before heavy ML artifacts finish loading.
+    app.state.models = ModelRegistry()
+
+    async def _load_models() -> None:
+        try:
+            app.state.models = await ModelRegistry.load()
+        except Exception as exc:
+            logger.error("Background ML model load failed: {error}", error=exc)
+
+    model_task = asyncio.create_task(_load_models())
     yield
+    model_task.cancel()
+    try:
+        await model_task
+    except asyncio.CancelledError:
+        pass
     logger.info("Shutting down {name}", name=settings.APP_NAME)
     await engine.dispose()
 

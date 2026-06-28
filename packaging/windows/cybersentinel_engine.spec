@@ -17,6 +17,7 @@ block_cipher = None
 # Only add submodules PyInstaller cannot trace. Do NOT use collect_submodules(sklearn)
 # — that bundles every sklearn test and makes the build huge/slow.
 hiddenimports = [
+    "main",
     "uvicorn.logging",
     "uvicorn.loops.auto",
     "uvicorn.protocols.http.auto",

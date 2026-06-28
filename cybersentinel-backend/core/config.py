@@ -12,9 +12,10 @@ Usage:
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, List
+from typing import Annotated, List, Self
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -87,34 +88,40 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
-    # Supabase (PostgreSQL) is the primary deployment database per FYP docs.
-    # Set DATABASE_URL in .env to your Supabase connection string.
-    # SQLite fallback allows offline local development without cloud DB.
-    DATABASE_URL: str = f"sqlite+aiosqlite:///{BASE_DIR / 'cybersentinel.db'}"
+    # Supabase (PostgreSQL) — required for all runtime deployments.
+    DATABASE_URL: str = ""
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def normalize_database_url(cls, value: str) -> str:
-        """Resolve SQLite paths and convert Supabase postgres:// URLs for asyncpg."""
+        """Convert Supabase postgres:// URLs for asyncpg."""
         if not isinstance(value, str):
             return value
-
-        # Supabase dashboard often gives postgresql:// — ensure async driver.
+        value = value.strip()
         if value.startswith("postgresql://"):
             value = "postgresql+asyncpg://" + value.removeprefix("postgresql://")
         elif value.startswith("postgres://"):
             value = "postgresql+asyncpg://" + value.removeprefix("postgres://")
-
-        prefixes = ("sqlite+aiosqlite:///", "sqlite:///")
-        for prefix in prefixes:
-            if value.startswith(prefix) and not value.startswith(prefix + "/"):
-                raw_path = value.removeprefix(prefix)
-                if raw_path and raw_path != ":memory:":
-                    db_path = Path(raw_path)
-                    if not db_path.is_absolute():
-                        db_path = BASE_DIR / db_path
-                    return f"{prefix}{db_path.resolve()}"
         return value
+
+    @model_validator(mode="after")
+    def require_supabase_database(self) -> Self:
+        allow_sqlite_tests = os.getenv("ALLOW_SQLITE_TESTS") == "1"
+        url = self.DATABASE_URL.strip()
+        if not url:
+            raise ValueError(
+                "DATABASE_URL is required. Set your Supabase pooler URL in .env "
+                "(postgresql+asyncpg://postgres.PROJECT_REF:PASSWORD@...pooler.supabase.com:5432/postgres)"
+            )
+        if url.startswith("sqlite"):
+            if allow_sqlite_tests:
+                return self
+            raise ValueError(
+                "SQLite is disabled. Use Supabase PostgreSQL in DATABASE_URL."
+            )
+        if not url.startswith("postgresql"):
+            raise ValueError("DATABASE_URL must be a PostgreSQL/Supabase connection string.")
+        return self
 
     @property
     def database_provider(self) -> str:

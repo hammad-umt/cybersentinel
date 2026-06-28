@@ -23,7 +23,7 @@ from core.config import settings
 
 
 def _engine_kwargs() -> dict:
-    """Build engine options — SSL and pooling for cloud Supabase."""
+    """Build engine options — SSL and pooling for Supabase PostgreSQL."""
     kwargs: dict = {
         "echo": settings.DEBUG,
         "pool_pre_ping": True,
@@ -33,16 +33,12 @@ def _engine_kwargs() -> dict:
         kwargs["connect_args"] = {"check_same_thread": False}
         return kwargs
 
-    if settings.uses_cloud_postgres:
-        # Supabase cloud requires SSL on direct and pooler connections.
-        connect_args: dict = {"ssl": "require"}
-        # Transaction pooler (port 6543) — disable prepared statement cache for PgBouncer.
-        if ":6543" in settings.DATABASE_URL:
-            connect_args["statement_cache_size"] = 0
-        kwargs["connect_args"] = connect_args
-        kwargs["pool_size"] = 5
-        kwargs["max_overflow"] = 10
-
+    connect_args: dict = {"ssl": "require", "timeout": 30}
+    if ":6543" in settings.DATABASE_URL:
+        connect_args["statement_cache_size"] = 0
+    kwargs["connect_args"] = connect_args
+    kwargs["pool_size"] = 10
+    kwargs["max_overflow"] = 20
     return kwargs
 
 

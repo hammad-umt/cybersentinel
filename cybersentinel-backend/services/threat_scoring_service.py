@@ -11,12 +11,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List
 
-from sqlalchemy import select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.severity import score_to_public_severity
-from db.models import FirewallAlert, PacketEvent
+from db.models import FirewallAlert, IPReputationCache, PacketEvent
 from schemas.threat_score import TopThreatsResponse, UnifiedThreatScore
 from services.threat_intel_service import ThreatIntelService
 
@@ -95,26 +95,90 @@ class ThreatScoringService:
         )
 
     async def top(self, limit: int = 20) -> TopThreatsResponse:
-        """Return top IPs discovered in packet events and firewall alerts."""
-        packet_ips = (await self.db.execute(
-            select(PacketEvent.src_ip)
-            .where(PacketEvent.user_id == self.user_id, PacketEvent.src_ip.is_not(None))
-            .distinct()
-        )).scalars().all()
-        firewall_ips = (await self.db.execute(
-            select(FirewallAlert.src_ip)
-            .where(FirewallAlert.user_id == self.user_id, FirewallAlert.src_ip.is_not(None))
-            .distinct()
-        )).scalars().all()
+        """
+        Return top malicious IPs for the dashboard.
 
-        candidates = sorted({ip for ip in [*packet_ips, *firewall_ips] if ip})
+        Uses aggregated Supabase/PostgreSQL telemetry only — no per-IP external
+        API calls (the old implementation scored every distinct IP via VirusTotal).
+        """
+        uid = self.user_id
+        rows = (
+            await self.db.execute(
+                select(
+                    FirewallAlert.src_ip,
+                    func.count().label("attempts"),
+                    func.max(FirewallAlert.threat_score).label("max_score"),
+                    func.avg(PacketEvent.threat_score_contribution).label("packet_avg"),
+                )
+                .outerjoin(
+                    PacketEvent,
+                    (PacketEvent.src_ip == FirewallAlert.src_ip)
+                    & (PacketEvent.user_id == FirewallAlert.user_id),
+                )
+                .where(FirewallAlert.user_id == uid, FirewallAlert.src_ip.is_not(None))
+                .group_by(FirewallAlert.src_ip)
+                .order_by(desc(func.max(FirewallAlert.threat_score)))
+                .limit(limit)
+            )
+        ).all()
+
+        if not rows:
+            rows = (
+                await self.db.execute(
+                    select(
+                        PacketEvent.src_ip,
+                        func.count().label("attempts"),
+                        func.max(PacketEvent.threat_score_contribution).label("max_score"),
+                        func.avg(PacketEvent.threat_score_contribution).label("packet_avg"),
+                    )
+                    .where(PacketEvent.user_id == uid, PacketEvent.src_ip.is_not(None))
+                    .group_by(PacketEvent.src_ip)
+                    .order_by(desc(func.max(PacketEvent.threat_score_contribution)))
+                    .limit(limit)
+                )
+            ).all()
+
+        ips = [row.src_ip for row in rows if row.src_ip]
+        country_map: dict[str, str] = {}
+        if ips:
+            cache_rows = (
+                await self.db.execute(
+                    select(IPReputationCache.ip_address, IPReputationCache.country_code)
+                    .where(
+                        IPReputationCache.user_id == uid,
+                        IPReputationCache.ip_address.in_(ips),
+                        IPReputationCache.country_code.is_not(None),
+                    )
+                )
+            ).all()
+            country_map = {ip: str(country) for ip, country in cache_rows}
+
         scores: List[UnifiedThreatScore] = []
-        for ip in candidates:
-            scores.append(await self.score(ip, {"source": "top"}))
+        for row in rows:
+            if not row.src_ip:
+                continue
+            max_score = round(float(row.max_score or 0.0), 2)
+            packet_avg = round(float(row.packet_avg or 0.0), 2)
+            country = country_map.get(row.src_ip)
+            scores.append(
+                UnifiedThreatScore(
+                    ip=row.src_ip,
+                    packet_score=packet_avg,
+                    anomaly_score=max_score,
+                    intel_score=0.0,
+                    final_score=max_score,
+                    severity=score_to_public_severity(max_score),
+                    classification=country or "Unknown",
+                    block_recommended=max_score >= 70.0,
+                    reason="Aggregated from stored firewall and packet telemetry",
+                    evidence={
+                        "attempts": int(row.attempts),
+                        "country": country,
+                        "source": "dashboard_fast_path",
+                    },
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+            )
 
-        scores.sort(key=lambda item: item.final_score, reverse=True)
-        return TopThreatsResponse(
-            total=len(scores[:limit]),
-            results=scores[:limit],
-        )
+        return TopThreatsResponse(total=len(scores), results=scores)
 

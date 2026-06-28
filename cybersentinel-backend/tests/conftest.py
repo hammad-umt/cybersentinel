@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 
+os.environ.setdefault("ALLOW_SQLITE_TESTS", "1")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("JWT_SECRET_KEY", "pytest-secret-key-at-least-32-characters-long")
 os.environ.setdefault("DEFAULT_ADMIN_EMAIL", "admin@cybersentinel.local")

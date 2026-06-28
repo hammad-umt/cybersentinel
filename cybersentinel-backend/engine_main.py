@@ -22,6 +22,15 @@ def _application_root() -> Path:
     return Path(__file__).resolve().parent
 
 
+def _write_engine_log(message: str) -> None:
+    try:
+        log_path = _application_root() / "engine.log"
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(message.rstrip() + "\n")
+    except OSError:
+        pass
+
+
 def _configure_desktop_runtime() -> None:
     if not _is_frozen():
         return
@@ -39,6 +48,14 @@ def _configure_desktop_runtime() -> None:
 
     engine_env = root / "engine.env"
     if not engine_env.is_file():
+        if _is_frozen():
+            msg = (
+                f"Missing engine.env next to {sys.executable}. "
+                "Reinstall CyberSentinel or restore engine.env from the installer."
+            )
+            print(f"ERROR: {msg}", file=sys.stderr)
+            _write_engine_log(msg)
+            sys.exit(1)
         return
 
     try:
@@ -60,16 +77,35 @@ _configure_desktop_runtime()
 
 
 def main() -> None:
-    import uvicorn
+    try:
+        import uvicorn
 
-    from core.config import settings
+        from core.config import settings
+    except Exception as exc:
+        msg = f"Engine configuration failed: {exc}"
+        print(f"ERROR: {msg}", file=sys.stderr)
+        _write_engine_log(msg)
+        sys.exit(1)
+
+    if _is_frozen() and settings.DATABASE_URL.startswith("sqlite"):
+        msg = (
+            "Desktop engine requires Supabase PostgreSQL in engine.env "
+            "(DATABASE_URL=postgresql+asyncpg://...)."
+        )
+        print(f"ERROR: {msg}", file=sys.stderr)
+        _write_engine_log(msg)
+        sys.exit(1)
 
     host = settings.HOST
     if host in {"0.0.0.0", "::"}:
         host = "127.0.0.1"
 
+    # Pass the app object — not "main:app". String imports fail in PyInstaller
+    # because main.py is not loaded unless referenced as a Python import.
+    from main import app
+
     uvicorn.run(
-        "main:app",
+        app,
         host=host,
         port=settings.PORT,
         log_level="info" if not settings.DEBUG else "debug",
@@ -82,3 +118,8 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         sys.exit(0)
+    except Exception as exc:
+        msg = f"Engine crashed: {exc}"
+        print(f"ERROR: {msg}", file=sys.stderr)
+        _write_engine_log(msg)
+        sys.exit(1)

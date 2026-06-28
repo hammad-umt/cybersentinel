@@ -11,6 +11,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import require_role
+from core.ttl_cache import get_or_set
 from core.tenant import get_current_user_id
 from db.database import get_db
 from schemas.dashboard import DashboardSummary
@@ -35,9 +36,14 @@ ServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)]
     summary="Get SOC dashboard summary",
     dependencies=[Depends(require_role("user"))],
 )
-async def dashboard_summary(service: ServiceDep) -> DashboardSummary:
+async def dashboard_summary(request: Request, service: ServiceDep) -> DashboardSummary:
+    user_id = get_current_user_id(request)
     try:
-        return await service.summary()
+        return await get_or_set(
+            f"dashboard:summary:{user_id}",
+            ttl_seconds=5.0,
+            factory=service.summary,
+        )
     except Exception as exc:
         logger.exception("Unexpected error in dashboard_summary")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))

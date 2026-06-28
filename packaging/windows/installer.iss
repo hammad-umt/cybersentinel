@@ -17,6 +17,10 @@
   #define NPCAP_INSTALLER "deps\npcap-installer.exe"
 #endif
 
+#ifndef VCREDIST_INSTALLER
+  #define VCREDIST_INSTALLER "deps\vc_redist.x64.exe"
+#endif
+
 #ifndef APP_ICON
   #define APP_ICON "C:\Users\hamma\OneDrive\Desktop\New folder\windows\runner\resources\app_icon.ico"
 #endif
@@ -57,6 +61,8 @@ Source: "{#FLUTTER_BUILD}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubd
 Source: "{#ENGINE_BUILD}\*"; DestDir: "{app}\engine"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#NPCAP_INSTALLER}"; DestDir: "{app}\deps"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#FLUTTER_BUILD}\deps\npcap-installer.exe"; DestDir: "{app}\deps"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#VCREDIST_INSTALLER}"; DestDir: "{app}\deps"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#FLUTTER_BUILD}\deps\vc_redist.x64.exe"; DestDir: "{app}\deps"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -70,10 +76,17 @@ Root: HKCR; Subkey: "cybersentinel\DefaultIcon"; ValueType: string; ValueName: "
 Root: HKCR; Subkey: "cybersentinel\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
 
 [Run]
+Filename: "{app}\deps\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Installing Microsoft Visual C++ Runtime..."; Flags: runhidden waituntilterminated; Check: VCRedistNeedsInstall
 Filename: "{app}\deps\npcap-installer.exe"; Parameters: "/S /loopback_support=yes /admin_only=yes /winpcap_mode=no"; StatusMsg: "Installing Npcap packet capture driver..."; Flags: runhidden waituntilterminated; Check: ShouldInstallNpcap
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent runascurrentuser
 
 [Code]
+function VCRedistNeedsInstall(): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{app}\deps\vc_redist.x64.exe')) and
+            (not RegKeyExists(HKLM, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64'));
+end;
+
 function IsNpcapInstalled(): Boolean;
 begin
   Result := FileExists(ExpandConstant('{sys}\Npcap\wpcap.dll')) or

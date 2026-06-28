@@ -9,6 +9,7 @@ caching so scoring endpoints can enrich IPs without repeatedly calling vendors.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import re
@@ -26,12 +27,13 @@ from schemas.threat_intel import EnrichedThreatContext, IPIntelResult, VTResult
 
 
 CACHE_TTL = timedelta(hours=24)
-HTTP_TIMEOUT_SECONDS = 10.0
-MAX_HTTP_ATTEMPTS = 3
-RETRY_BACKOFF_SECONDS = (0.5, 1.0, 2.0)
+HTTP_TIMEOUT_SECONDS = 12.0
+FILE_UPLOAD_TIMEOUT_SECONDS = 45.0
+MAX_HTTP_ATTEMPTS = 2
+RETRY_BACKOFF_SECONDS = (0.25, 0.75)
 VT_BASE_URL = "https://www.virustotal.com/api/v3"
-URL_POLL_ATTEMPTS = 12
-URL_POLL_INTERVAL_SECONDS = 2.0
+URL_POLL_ATTEMPTS = 6
+URL_POLL_INTERVAL_SECONDS = 1.0
 
 
 class ThreatIntelService:
@@ -49,48 +51,36 @@ class ThreatIntelService:
 
         provider_status: Dict[str, str] = {}
         raw: Dict[str, Any] = {}
-        abuse_data: Dict[str, Any] = {}
-        geo_data: Dict[str, Any] = {}
 
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
-            if settings.abuseipdb_configured:
-                try:
-                    response = await _request_with_retry(
-                        client,
-                        "GET",
-                        "https://api.abuseipdb.com/api/v2/check",
-                        provider="AbuseIPDB",
-                        headers={
-                            "Key": settings.ABUSEIPDB_API_KEY,
-                            "Accept": "application/json",
-                        },
-                        params={"ipAddress": ip, "maxAgeInDays": 90, "verbose": ""},
-                    )
-                    abuse_payload = response.json()
-                    abuse_data = abuse_payload.get("data", {})
-                    raw["abuseipdb"] = abuse_payload
-                    provider_status["abuseipdb"] = "ok"
-                except Exception as exc:
-                    provider_status["abuseipdb"] = "error"
-                    logger.warning("AbuseIPDB lookup failed for {}: {}", ip, exc)
+            abuse_task = self._fetch_abuseipdb(client, ip)
+            geo_task = self._fetch_geoip(client, ip)
+            abuse_result, geo_result = await asyncio.gather(
+                abuse_task,
+                geo_task,
+                return_exceptions=True,
+            )
+
+            abuse_data: Dict[str, Any] = {}
+            geo_data: Dict[str, Any] = {}
+
+            if isinstance(abuse_result, Exception):
+                provider_status["abuseipdb"] = "error"
+                logger.warning("AbuseIPDB lookup failed for {}: {}", ip, abuse_result)
+            elif abuse_result is not None:
+                abuse_data, raw_abuse, provider_status["abuseipdb"] = abuse_result
+                raw["abuseipdb"] = raw_abuse
             else:
                 provider_status["abuseipdb"] = "skipped_missing_api_key"
 
-            try:
-                geo_url = f"{settings.GEOIP_BASE_URL.rstrip('/')}/{ip}"
-                response = await _request_with_retry(
-                    client,
-                    "GET",
-                    geo_url,
-                    provider="GeoIP",
-                    params={"fields": "status,message,country,countryCode,city,lat,lon,isp,as,query"},
-                )
-                geo_data = response.json()
-                raw["geoip"] = geo_data
-                provider_status["geoip"] = "ok" if geo_data.get("status") != "fail" else "unavailable"
-            except Exception as exc:
+            if isinstance(geo_result, Exception):
                 provider_status["geoip"] = "error"
-                logger.warning("GeoIP lookup failed for {}: {}", ip, exc)
+                logger.warning("GeoIP lookup failed for {}: {}", ip, geo_result)
+            elif geo_result is not None:
+                geo_data, raw_geo, provider_status["geoip"] = geo_result
+                raw["geoip"] = raw_geo
+            else:
+                provider_status["geoip"] = "unavailable"
 
         raw["provider_status"] = provider_status
         score = _ip_intel_score(abuse_data)
@@ -165,34 +155,7 @@ class ThreatIntelService:
         try:
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
                 headers = {"x-apikey": settings.VIRUSTOTAL_API_KEY}
-                try:
-                    response = await _request_with_retry(
-                        client,
-                        "GET",
-                        f"{VT_BASE_URL}/files/{file_hash}",
-                        provider="VirusTotal",
-                        headers=headers,
-                    )
-                    payload = response.json()
-                except httpx.HTTPStatusError as exc:
-                    if exc.response.status_code != 404:
-                        raise
-                    response = await _request_with_retry(
-                        client,
-                        "POST",
-                        f"{VT_BASE_URL}/files",
-                        provider="VirusTotal",
-                        headers=headers,
-                        files={"file": ("upload.bin", file_bytes)},
-                    )
-                    upload_payload = response.json()
-                    analysis_id = (
-                        upload_payload.get("data", {})
-                        .get("id")
-                    )
-                    if not analysis_id:
-                        raise ValueError("VirusTotal file upload did not return an analysis id")
-                    payload = await _poll_vt_analysis(client, analysis_id, headers)
+                payload = await self._fetch_vt_file_report(client, headers, file_hash, file_bytes)
         except Exception as exc:
             logger.warning("VirusTotal file scan failed for {}: {}", file_hash, exc)
             return VTResult(
@@ -230,19 +193,7 @@ class ThreatIntelService:
         try:
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
                 headers = {"x-apikey": settings.VIRUSTOTAL_API_KEY}
-                response = await _request_with_retry(
-                    client,
-                    "POST",
-                    f"{VT_BASE_URL}/urls",
-                    provider="VirusTotal",
-                    headers=headers,
-                    data={"url": lookup_key},
-                )
-                submit_payload = response.json()
-                analysis_id = submit_payload.get("data", {}).get("id")
-                if not analysis_id:
-                    raise ValueError("VirusTotal URL submission did not return an analysis id")
-                payload = await _poll_vt_analysis(client, analysis_id, headers)
+                payload = await self._fetch_vt_url_report(client, headers, lookup_key)
         except Exception as exc:
             logger.warning("VirusTotal URL scan failed for {}: {}", lookup_key, exc)
             return VTResult(
@@ -263,8 +214,10 @@ class ThreatIntelService:
 
     async def enrich(self, ip: str) -> EnrichedThreatContext:
         """Return combined AbuseIPDB, GeoIP, and VirusTotal context."""
-        ip_result = await self.check_ip(ip)
-        vt_result = await self.check_virustotal(ip)
+        ip_result, vt_result = await asyncio.gather(
+            self.check_ip(ip),
+            self.check_virustotal(ip),
+        )
         intel_score = round(max(ip_result.threat_score, vt_result.threat_score), 2)
         notes = [
             f"{provider}:{status}"
@@ -282,6 +235,113 @@ class ThreatIntelService:
             provider_notes=notes,
             timestamp=_now_utc(),
         )
+
+    async def _fetch_abuseipdb(
+        self,
+        client: httpx.AsyncClient,
+        ip: str,
+    ) -> tuple[Dict[str, Any], Dict[str, Any], str] | None:
+        if not settings.abuseipdb_configured:
+            return None
+        response = await _request_with_retry(
+            client,
+            "GET",
+            "https://api.abuseipdb.com/api/v2/check",
+            provider="AbuseIPDB",
+            headers={
+                "Key": settings.ABUSEIPDB_API_KEY,
+                "Accept": "application/json",
+            },
+            params={"ipAddress": ip, "maxAgeInDays": 90, "verbose": ""},
+        )
+        abuse_payload = response.json()
+        return abuse_payload.get("data", {}), abuse_payload, "ok"
+
+    async def _fetch_geoip(
+        self,
+        client: httpx.AsyncClient,
+        ip: str,
+    ) -> tuple[Dict[str, Any], Dict[str, Any], str]:
+        geo_url = f"{settings.GEOIP_BASE_URL.rstrip('/')}/{ip}"
+        response = await _request_with_retry(
+            client,
+            "GET",
+            geo_url,
+            provider="GeoIP",
+            params={"fields": "status,message,country,countryCode,city,lat,lon,isp,as,query"},
+        )
+        geo_data = response.json()
+        status = "ok" if geo_data.get("status") != "fail" else "unavailable"
+        return geo_data, geo_data, status
+
+    async def _fetch_vt_file_report(
+        self,
+        client: httpx.AsyncClient,
+        headers: Dict[str, str],
+        file_hash: str,
+        file_bytes: bytes,
+    ) -> Dict[str, Any]:
+        try:
+            response = await _request_with_retry(
+                client,
+                "GET",
+                f"{VT_BASE_URL}/files/{file_hash}",
+                provider="VirusTotal",
+                headers=headers,
+            )
+            return response.json()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404:
+                raise
+
+        async with httpx.AsyncClient(timeout=FILE_UPLOAD_TIMEOUT_SECONDS) as upload_client:
+            response = await _request_with_retry(
+                upload_client,
+                "POST",
+                f"{VT_BASE_URL}/files",
+                provider="VirusTotal",
+                headers=headers,
+                files={"file": ("upload.bin", file_bytes)},
+            )
+            upload_payload = response.json()
+            analysis_id = upload_payload.get("data", {}).get("id")
+            if not analysis_id:
+                raise ValueError("VirusTotal file upload did not return an analysis id")
+            return await _poll_vt_analysis(upload_client, analysis_id, headers)
+
+    async def _fetch_vt_url_report(
+        self,
+        client: httpx.AsyncClient,
+        headers: Dict[str, str],
+        url: str,
+    ) -> Dict[str, Any]:
+        url_id = _vt_url_identifier(url)
+        try:
+            response = await _request_with_retry(
+                client,
+                "GET",
+                f"{VT_BASE_URL}/urls/{url_id}",
+                provider="VirusTotal",
+                headers=headers,
+            )
+            return response.json()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404:
+                raise
+
+        response = await _request_with_retry(
+            client,
+            "POST",
+            f"{VT_BASE_URL}/urls",
+            provider="VirusTotal",
+            headers=headers,
+            data={"url": url},
+        )
+        submit_payload = response.json()
+        analysis_id = submit_payload.get("data", {}).get("id")
+        if not analysis_id:
+            raise ValueError("VirusTotal URL submission did not return an analysis id")
+        return await _poll_vt_analysis(client, analysis_id, headers)
 
     async def _get_fresh_ip_cache(self, ip: str) -> IPReputationCache | None:
         row = (await self.db.execute(
@@ -469,6 +529,10 @@ class ThreatIntelService:
             scanned_at=row.scanned_at,
             raw=raw,
         )
+
+
+def _vt_url_identifier(url: str) -> str:
+    return base64.urlsafe_b64encode(url.encode("utf-8")).decode("utf-8").strip("=")
 
 
 async def _request_with_retry(

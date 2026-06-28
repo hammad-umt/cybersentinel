@@ -32,6 +32,34 @@ if (-not $Python) {
     if (-not $Python) { $Python = "python" }
 }
 
+function Stop-CyberSentinelProcesses {
+    foreach ($name in @("cybersentinel_engine", "cybersentinel")) {
+        Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Remove-LockedPath {
+    param(
+        [string]$Path,
+        [int]$Retries = 6
+    )
+    if (-not (Test-Path $Path)) { return }
+
+    for ($attempt = 1; $attempt -le $Retries; $attempt++) {
+        try {
+            Remove-Item $Path -Recurse -Force -ErrorAction Stop
+            return
+        } catch {
+            if ($attempt -eq $Retries) {
+                throw "Could not remove locked path: $Path`nClose CyberSentinel, pause OneDrive sync, then retry."
+            }
+            Write-Host "    Path locked ($attempt/$Retries): $Path" -ForegroundColor Yellow
+            Stop-CyberSentinelProcesses
+            Start-Sleep -Seconds 3
+        }
+    }
+}
+
 function Invoke-Python {
     param([string[]]$Arguments)
     $parts = $Python.Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)
@@ -68,18 +96,31 @@ if (-not $SkipInstall) {
 }
 
 Write-Host "==> Running PyInstaller (output: $DistDir)..."
+Stop-CyberSentinelProcesses
+Start-Sleep -Seconds 1
+
+# Use a fresh work folder so a locked base_library.zip from a prior run cannot break --clean.
+$workRun = Join-Path $WorkPath ("run_" + (Get-Date -Format "yyyyMMddHHmmss"))
+Remove-LockedPath $workRun
+
 Push-Location $PSScriptRoot
 try {
     Invoke-Python -Arguments @(
         "-m", "PyInstaller", $SpecFile,
         "--noconfirm", "--clean",
         "--distpath", $DistPath,
-        "--workpath", $WorkPath
+        "--workpath", $workRun
     )
 }
 finally {
     Pop-Location
 }
+
+# Drop old PyInstaller work folders (keep the folder that just succeeded).
+Get-ChildItem $WorkPath -Directory -Filter "run_*" -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -ne $workRun } |
+    ForEach-Object { Remove-LockedPath $_.FullName }
+Remove-LockedPath (Join-Path $WorkPath "cybersentinel_engine")
 
 # Legacy fallback when an older script wrote to cybersentinel-backend\dist
 $legacyDist = Join-Path $Backend "dist\CyberSentinelEngine"

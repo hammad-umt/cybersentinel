@@ -15,6 +15,7 @@ BACKEND = REPO_ROOT / "cybersentinel-backend"
 block_cipher = None
 
 hiddenimports = [
+    "main",
     "uvicorn.logging",
     "uvicorn.loops.auto",
     "uvicorn.protocols.http.auto",
