@@ -84,91 +84,89 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return AuthScaffold(
       showBack: true,
       backLabel: 'Back to sign in',
-      stepLabel: 'Create account · Step 1 of 1',
-      title: 'Create your account',
-      subtitle: 'Register to access live capture, threat intel, and SOC dashboards.',
-      heroIcon: Icons.person_add_alt_1_rounded,
-      heroTagline: 'Analyst-grade tooling for modern security teams',
+      title: '',
+      subtitle: '',
+      heroIcon: Icons.shield_outlined,
       child: AutofillGroup(
         child: Form(
           key: _formKey,
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            AuthModeTabs(
+              activeIndex: 1,
+              onSelect: (i) {
+                if (i == 0) Navigator.of(context).pop();
+              },
+            ),
+            const SizedBox(height: 22),
             if (_formError != null) ...[
               AuthFormAlert.error(message: _formError!),
               const SizedBox(height: 20),
             ],
             AuthFormSection(
-              label: 'Account details',
-              child: Column(
-                children: [
-                  AuthTextField(
-                    controller: _emailController,
-                    focusNode: _emailFocus,
-                    label: 'Work email',
-                    hint: 'analyst@company.com',
-                    errorText: _submitted ? _emailError : null,
-                    prefixIcon: Icons.alternate_email_rounded,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const [AutofillHints.email],
-                    onChanged: (_) {
-                      if (_submitted) _validate();
-                      setState(() {});
-                    },
-                    onSubmitted: (_) => _passwordFocus.requestFocus(),
-                  ),
-                  const SizedBox(height: 16),
-                  AuthTextField(
-                    controller: _passwordController,
-                    focusNode: _passwordFocus,
-                    label: 'Password',
-                    hint: 'Create a strong password',
-                    errorText: _submitted ? _passwordError : null,
-                    prefixIcon: Icons.lock_outline_rounded,
-                    obscureText: true,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const [AutofillHints.newPassword],
-                    onChanged: (_) {
-                      if (_submitted) _validate();
-                      setState(() {});
-                    },
-                    onSubmitted: (_) => _confirmFocus.requestFocus(),
-                  ),
-                  if (_passwordController.text.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    AuthPasswordStrength(password: _passwordController.text),
-                  ],
-                  const SizedBox(height: 16),
-                  AuthTextField(
-                    controller: _confirmController,
-                    focusNode: _confirmFocus,
-                    label: 'Confirm password',
-                    hint: 'Re-enter your password',
-                    errorText: _submitted ? _confirmError : null,
-                    prefixIcon: Icons.verified_user_outlined,
-                    obscureText: true,
-                    textInputAction: TextInputAction.done,
-                    autofillHints: const [AutofillHints.newPassword],
-                    onChanged: (_) {
-                      if (_submitted) _validate();
-                    },
-                    onSubmitted: (_) => _register(),
-                  ),
-                ],
+              label: 'EMAIL',
+              child: AuthTextField(
+                controller: _emailController,
+                focusNode: _emailFocus,
+                label: 'Email',
+                hint: 'you@example.com',
+                errorText: _submitted ? _emailError : null,
+                prefixIcon: Icons.alternate_email_rounded,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.email],
+                onChanged: (_) {
+                  if (_submitted) _validate();
+                  setState(() {});
+                },
+                onSubmitted: (_) => _passwordFocus.requestFocus(),
               ),
             ),
-            const SizedBox(height: 8),
-            AuthCtaBlock(
-              primaryLabel: 'Create account & continue',
-              primaryIcon: Icons.check_rounded,
-              primaryLoading: _loading,
-              helperText: 'By creating an account you agree to your organization\'s access policy.',
-              secondaryPrompt: 'Already have an account?',
-              secondaryActionLabel: 'Sign in instead',
-              onPrimary: _loading ? null : _register,
-              onSecondaryAction: _loading ? null : () => Navigator.of(context).pop(),
+            const SizedBox(height: 16),
+            AuthFormSection(
+              label: 'PASSWORD',
+              child: AuthTextField(
+                controller: _passwordController,
+                focusNode: _passwordFocus,
+                label: 'Password',
+                hint: 'Create a password',
+                errorText: _submitted ? _passwordError : null,
+                prefixIcon: Icons.lock_outline_rounded,
+                obscureText: true,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.newPassword],
+                onChanged: (_) {
+                  if (_submitted) _validate();
+                  setState(() {});
+                },
+                onSubmitted: (_) => _confirmFocus.requestFocus(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            AuthFormSection(
+              label: 'CONFIRM PASSWORD',
+              child: AuthTextField(
+                controller: _confirmController,
+                focusNode: _confirmFocus,
+                label: 'Confirm password',
+                hint: 'Re-enter password',
+                errorText: _submitted ? _confirmError : null,
+                prefixIcon: Icons.verified_user_outlined,
+                obscureText: true,
+                textInputAction: TextInputAction.done,
+                autofillHints: const [AutofillHints.newPassword],
+                onChanged: (_) {
+                  if (_submitted) _validate();
+                },
+                onSubmitted: (_) => _register(),
+              ),
+            ),
+            const SizedBox(height: 14),
+            AuthAuthButton(
+              label: 'Sign Up',
+              loading: _loading,
+              onPressed: _loading ? null : _register,
             ),
           ],
         ),

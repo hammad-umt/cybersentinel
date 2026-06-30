@@ -16,7 +16,8 @@ class CopilotAssistantOverlay extends StatefulWidget {
   final VoidCallback onToggle;
 
   @override
-  State<CopilotAssistantOverlay> createState() => _CopilotAssistantOverlayState();
+  State<CopilotAssistantOverlay> createState() =>
+      _CopilotAssistantOverlayState();
 }
 
 class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
@@ -25,7 +26,6 @@ class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
   final _messages = <_ChatMessage>[];
-  late AnimationController _fabPulse;
 
   static const _quickPrompts = [
     'Hi',
@@ -38,10 +38,6 @@ class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
   @override
   void initState() {
     super.initState();
-    _fabPulse = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2200),
-    )..repeat(reverse: true);
     _seedWelcome();
   }
 
@@ -51,9 +47,9 @@ class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
       _ChatMessage(
         text: name.isNotEmpty
             ? 'Hello, $name. I\'m CyberSentinel Copilot — your AI security analyst. '
-                'Ask about threats, alerts, captures, or investigation workflows.'
+                  'Ask about threats, alerts, captures, or investigation workflows.'
             : 'Hello. I\'m CyberSentinel Copilot — your AI security analyst. '
-                'Ask about threats, alerts, captures, or investigation workflows.',
+                  'Ask about threats, alerts, captures, or investigation workflows.',
         isUser: false,
         isSystem: true,
       ),
@@ -71,7 +67,6 @@ class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
 
   @override
   void dispose() {
-    _fabPulse.dispose();
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -94,8 +89,15 @@ class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
 
   bool _isGreeting(String text) {
     final n = text.trim().toLowerCase().replaceAll(RegExp(r'[!?.]+$'), '');
-    return const {'hi', 'hello', 'hey', 'hi there', 'hello there', 'good morning', 'good afternoon'}
-        .contains(n);
+    return const {
+      'hi',
+      'hello',
+      'hey',
+      'hi there',
+      'hello there',
+      'good morning',
+      'good afternoon',
+    }.contains(n);
   }
 
   String _localGreetingReply() {
@@ -134,7 +136,9 @@ class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
     try {
       final reply = _isGreeting(text)
           ? _localGreetingReply()
-          : _extractAnswer(await ApiService.instance.askCopilot(question: text));
+          : _extractAnswer(
+              await ApiService.instance.askCopilot(question: text),
+            );
 
       if (!mounted) return;
       setState(() {
@@ -149,8 +153,8 @@ class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
             text: _isGreeting(text)
                 ? _localGreetingReply()
                 : 'I couldn\'t reach the analysis service right now. '
-                    'Please verify the backend is running, then try again.\n\n'
-                    'Error: ${e.toString().replaceFirst('Exception: ', '')}',
+                      'Please verify the backend is running, then try again.\n\n'
+                      'Error: ${e.toString().replaceFirst('Exception: ', '')}',
             isUser: false,
             isError: true,
           ),
@@ -163,9 +167,7 @@ class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
     final isWide = MediaQuery.sizeOf(context).width >= 900;
-    final fabBottom = isWide ? 24.0 : 76.0 + bottomInset;
 
     return Stack(
       clipBehavior: Clip.none,
@@ -195,61 +197,7 @@ class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
             ),
           ),
         ],
-        if (!_open)
-          Positioned(
-            right: 16,
-            bottom: fabBottom,
-            child: _CopilotFab(pulse: _fabPulse, onTap: _toggle),
-          ),
       ],
-    );
-  }
-}
-
-class _CopilotFab extends StatelessWidget {
-  const _CopilotFab({required this.pulse, required this.onTap});
-
-  final AnimationController pulse;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: pulse,
-      builder: (context, child) {
-        return Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.cyan.withValues(alpha: 0.25 + pulse.value * 0.15),
-                blurRadius: 16 + pulse.value * 8,
-                spreadRadius: pulse.value * 2,
-              ),
-            ],
-          ),
-          child: child,
-        );
-      },
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          customBorder: const CircleBorder(),
-          child: Ink(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                colors: [Color(0xFF0891B2), Color(0xFF06B6D4), Color(0xFF22D3EE)],
-              ),
-              border: Border.all(color: AppColors.cyanLight.withValues(alpha: 0.4)),
-            ),
-            child: Icon(Icons.auto_awesome, color: Colors.white, size: 24),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -309,15 +257,22 @@ class _CopilotPanel extends StatelessWidget {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   itemCount: quickPrompts.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  separatorBuilder: (_, index) => const SizedBox(width: 8),
                   itemBuilder: (context, i) {
                     return ActionChip(
                       label: Text(quickPrompts[i]),
-                      labelStyle: GoogleFonts.inter(fontSize: 12, color: AppColors.textPrimary),
+                      labelStyle: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textPrimary,
+                      ),
                       backgroundColor: AppColors.border,
                       side: BorderSide(color: AppColors.borderElevated),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      onPressed: loading ? null : () => onQuickPrompt(quickPrompts[i]),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      onPressed: loading
+                          ? null
+                          : () => onQuickPrompt(quickPrompts[i]),
                     );
                   },
                 ),
@@ -355,7 +310,11 @@ class _PanelHeader extends StatelessWidget {
               color: AppColors.cyan.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(Icons.auto_awesome, color: AppColors.cyanLight, size: 18),
+            child: Icon(
+              Icons.chat_bubble_outline,
+              color: AppColors.cyanLight,
+              size: 18,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -372,7 +331,10 @@ class _PanelHeader extends StatelessWidget {
                 ),
                 Text(
                   'AI-assisted investigation',
-                  style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11),
+                  style: GoogleFonts.inter(
+                    color: AppColors.textMuted,
+                    fontSize: 11,
+                  ),
                 ),
               ],
             ),
@@ -390,7 +352,10 @@ class _PanelHeader extends StatelessWidget {
                 Container(
                   width: 6,
                   height: 6,
-                  decoration: BoxDecoration(color: AppColors.greenLight, shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    color: AppColors.greenLight,
+                    shape: BoxShape.circle,
+                  ),
                 ),
                 const SizedBox(width: 5),
                 Text(
@@ -427,14 +392,15 @@ class _MessageBubble extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isUser) ...[
             CircleAvatar(
               radius: 14,
               backgroundColor: AppColors.cyan.withValues(alpha: 0.15),
-              child: Icon(Icons.auto_awesome, size: 14, color: AppColors.cyanLight),
             ),
             const SizedBox(width: 8),
           ],
@@ -445,8 +411,8 @@ class _MessageBubble extends StatelessWidget {
                 color: isUser
                     ? AppColors.cyan.withValues(alpha: 0.18)
                     : message.isError
-                        ? AppColors.red.withValues(alpha: 0.08)
-                        : AppColors.border,
+                    ? AppColors.red.withValues(alpha: 0.08)
+                    : AppColors.border,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(14),
                   topRight: const Radius.circular(14),
@@ -457,8 +423,8 @@ class _MessageBubble extends StatelessWidget {
                   color: isUser
                       ? AppColors.cyan.withValues(alpha: 0.25)
                       : message.isError
-                          ? AppColors.red.withValues(alpha: 0.25)
-                          : AppColors.borderElevated,
+                      ? AppColors.red.withValues(alpha: 0.25)
+                      : AppColors.borderElevated,
                 ),
               ),
               child: Text(
@@ -523,7 +489,10 @@ class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
     Future.delayed(widget.delay, () {
       if (mounted) _c.repeat(reverse: true);
     });
@@ -542,7 +511,10 @@ class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
       child: Container(
         width: 6,
         height: 6,
-        decoration: BoxDecoration(color: AppColors.cyanLight, shape: BoxShape.circle),
+        decoration: BoxDecoration(
+          color: AppColors.cyanLight,
+          shape: BoxShape.circle,
+        ),
       ),
     );
   }
@@ -573,16 +545,25 @@ class _InputBar extends StatelessWidget {
             child: TextField(
               controller: controller,
               enabled: !loading,
-              style: GoogleFonts.inter(color: AppColors.textPrimary, fontSize: 14),
+              style: GoogleFonts.inter(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+              ),
               cursorColor: AppColors.cyanLight,
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => onSend(),
               decoration: InputDecoration(
                 hintText: 'Ask about threats, alerts, or workflows…',
-                hintStyle: GoogleFonts.inter(color: AppColors.textDim, fontSize: 13),
+                hintStyle: GoogleFonts.inter(
+                  color: AppColors.textDim,
+                  fontSize: 13,
+                ),
                 filled: true,
                 fillColor: AppColors.border,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -593,7 +574,9 @@ class _InputBar extends StatelessWidget {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: AppColors.cyan.withValues(alpha: 0.5)),
+                  borderSide: BorderSide(
+                    color: AppColors.cyan.withValues(alpha: 0.5),
+                  ),
                 ),
               ),
             ),
@@ -611,7 +594,10 @@ class _InputBar extends StatelessWidget {
                 child: loading
                     ? const Padding(
                         padding: EdgeInsets.all(12),
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : Icon(Icons.send_rounded, color: Colors.white, size: 20),
               ),

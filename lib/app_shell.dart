@@ -1,3 +1,5 @@
+import 'package:cybersentinel/services/navigation_intent_service.dart';
+import 'package:cybersentinel/services/security_alert_service.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
 import 'package:cybersentinel/theme/theme_service.dart';
 import 'package:cybersentinel/widgets/copilot/copilot_assistant.dart';
@@ -7,11 +9,15 @@ import 'package:cybersentinel/widgets/ip_analysis/ip_analysis.dart';
 import 'package:cybersentinel/widgets/packet_tracing/packet_tracing.dart';
 import 'package:cybersentinel/widgets/reports/reports.dart';
 import 'package:cybersentinel/widgets/setings/settings.dart';
+import 'package:cybersentinel/widgets/shared/active_services_banner.dart';
 import 'package:cybersentinel/widgets/shared/animated_widgets.dart';
+import 'package:cybersentinel/widgets/shared/global_search.dart';
+import 'package:cybersentinel/widgets/shared/security_alerts_sheet.dart';
 import 'package:cybersentinel/widgets/virus_scanner/virus_scanner.dart';
 import 'package:cybersentinel/services/api_service.dart';
 import 'package:cybersentinel/services/auth_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 const _pageTitles = [
   'Dashboard',
@@ -30,6 +36,10 @@ const _mobileNavItems = [
   (Icons.bug_report_outlined, 'Virus'),
   (Icons.location_on_outlined, 'IP'),
 ];
+
+class _OpenSearchIntent extends Intent {
+  const _OpenSearchIntent();
+}
 
 class MainAppShell extends StatefulWidget {
   const MainAppShell({super.key, this.initialIndex = 0});
@@ -60,6 +70,26 @@ class _MainAppShellState extends State<MainAppShell> {
     super.initState();
     _pageIndex = widget.initialIndex;
     _checkHealth();
+    NavigationIntentService.instance.addListener(_onNavigationIntent);
+    SecurityAlertService.instance.addListener(_onAlertsChanged);
+  }
+
+  @override
+  void dispose() {
+    NavigationIntentService.instance.removeListener(_onNavigationIntent);
+    SecurityAlertService.instance.removeListener(_onAlertsChanged);
+    super.dispose();
+  }
+
+  void _onNavigationIntent() {
+    final index = NavigationIntentService.instance.consumePageIndex();
+    if (index != null && index >= 0 && index < _pages.length) {
+      setState(() => _pageIndex = index);
+    }
+  }
+
+  void _onAlertsChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _checkHealth() async {
@@ -78,6 +108,11 @@ class _MainAppShellState extends State<MainAppShell> {
 
   void _openCopilot() => setState(() => _copilotOpen = true);
   void _toggleCopilot() => setState(() => _copilotOpen = !_copilotOpen);
+  void _closeCopilot() => setState(() => _copilotOpen = false);
+
+  void _showAlerts(BuildContext context) {
+    showSecurityAlertsPanel(context);
+  }
 
   Future<void> _showProfileMenu(BuildContext context, Offset anchor) async {
     final auth = AuthService.instance;
@@ -111,10 +146,7 @@ class _MainAppShellState extends State<MainAppShell> {
               const SizedBox(height: 4),
               Text(
                 auth.role,
-                style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
             ],
           ),
@@ -148,7 +180,25 @@ class _MainAppShellState extends State<MainAppShell> {
       listenable: ThemeService.instance,
       builder: (context, _) {
         AppColors.setLightMode(ThemeService.instance.isLight);
-        return _buildShell(context);
+        return Shortcuts(
+          shortcuts: const {
+            SingleActivator(LogicalKeyboardKey.keyK, control: true):
+                _OpenSearchIntent(),
+            SingleActivator(LogicalKeyboardKey.keyK, meta: true):
+                _OpenSearchIntent(),
+          },
+          child: Actions(
+            actions: {
+              _OpenSearchIntent: CallbackAction<_OpenSearchIntent>(
+                onInvoke: (_) {
+                  showGlobalSearch(context);
+                  return null;
+                },
+              ),
+            },
+            child: Focus(autofocus: true, child: _buildShell(context)),
+          ),
+        );
       },
     );
   }
@@ -176,8 +226,9 @@ class _MainAppShellState extends State<MainAppShell> {
                         _TopNavbar(
                           title: _pageTitles[_pageIndex],
                           onProfileTap: _showProfileMenu,
-                          onCopilotTap: _openCopilot,
+                          onAlertsTap: () => _showAlerts(context),
                         ),
+                        const ActiveServicesBanner(),
                         Expanded(
                           child: ColoredBox(
                             color: AppColors.bg,
@@ -194,6 +245,12 @@ class _MainAppShellState extends State<MainAppShell> {
               isOpen: _copilotOpen,
               onToggle: _toggleCopilot,
             ),
+            _AlertToastOverlay(),
+            _CopilotFab(
+              isOpen: _copilotOpen,
+              onTap: _openCopilot,
+              onClose: _closeCopilot,
+            ),
           ],
         ),
       );
@@ -209,16 +266,28 @@ class _MainAppShellState extends State<MainAppShell> {
                 _MobileHeader(
                   backendLive: _backendLive,
                   pageTitle: _pageTitles[_pageIndex],
-                  onCopilotTap: _openCopilot,
+                  onAlertsTap: () => _showAlerts(context),
+                  onSearchTap: () => showGlobalSearch(context),
                 ),
+                const ActiveServicesBanner(),
                 Expanded(child: _buildPageContent()),
-                _MobileBottomNav(activeIndex: _pageIndex, onNavigate: _navigate),
+                _MobileBottomNav(
+                  activeIndex: _pageIndex,
+                  onNavigate: _navigate,
+                ),
               ],
             ),
           ),
+
           CopilotAssistantOverlay(
             isOpen: _copilotOpen,
             onToggle: _toggleCopilot,
+          ),
+          _AlertToastOverlay(),
+          _CopilotFab(
+            isOpen: _copilotOpen,
+            onTap: _openCopilot,
+            onClose: _closeCopilot,
           ),
         ],
       ),
@@ -226,27 +295,7 @@ class _MainAppShellState extends State<MainAppShell> {
   }
 
   Widget _buildPageContent() {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 350),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, animation) {
-        return FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0.02, 0),
-              end: Offset.zero,
-            ).animate(animation),
-            child: child,
-          ),
-        );
-      },
-      child: KeyedSubtree(
-        key: ValueKey(_pageIndex),
-        child: _pages[_pageIndex],
-      ),
-    );
+    return IndexedStack(index: _pageIndex, children: _pages);
   }
 }
 
@@ -289,7 +338,11 @@ class _DesktopSidebar extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Icon(Icons.shield_outlined, color: AppColors.cyanLight, size: 24),
+                Icon(
+                  Icons.shield_outlined,
+                  color: AppColors.cyanLight,
+                  size: 24,
+                ),
                 SizedBox(width: 12),
                 Text(
                   'CyberSentinel',
@@ -341,7 +394,9 @@ class _DesktopSidebar extends StatelessWidget {
                       Text(
                         backendLive ? 'LIVE' : 'OFFLINE',
                         style: TextStyle(
-                          color: backendLive ? AppColors.redLight : AppColors.textDim,
+                          color: backendLive
+                              ? AppColors.redLight
+                              : AppColors.textDim,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -384,10 +439,14 @@ class _NavTile extends StatelessWidget {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: isActive ? AppColors.cyan.withValues(alpha: 0.1) : Colors.transparent,
+              color: isActive
+                  ? AppColors.cyan.withValues(alpha: 0.1)
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: isActive ? AppColors.cyan.withValues(alpha: 0.2) : Colors.transparent,
+                color: isActive
+                    ? AppColors.cyan.withValues(alpha: 0.2)
+                    : Colors.transparent,
               ),
             ),
             child: Row(
@@ -419,12 +478,12 @@ class _TopNavbar extends StatelessWidget {
   const _TopNavbar({
     required this.title,
     required this.onProfileTap,
-    required this.onCopilotTap,
+    required this.onAlertsTap,
   });
 
   final String title;
   final void Function(BuildContext context, Offset anchor) onProfileTap;
-  final VoidCallback onCopilotTap;
+  final VoidCallback onAlertsTap;
 
   @override
   Widget build(BuildContext context) {
@@ -446,39 +505,21 @@ class _TopNavbar extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          SizedBox(
-            width: 320,
-            height: 40,
-            child: TextField(
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
-              cursorColor: AppColors.cyanLight,
-              decoration: InputDecoration(
-                hintText: 'Global search...',
-                hintStyle: TextStyle(color: AppColors.textDim, fontSize: 14, fontWeight: FontWeight.w500),
-                filled: true,
-                fillColor: AppColors.border,
-                prefixIcon: Icon(Icons.search, color: AppColors.textDim, size: 18),
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: AppColors.borderElevated),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: AppColors.cyan.withValues(alpha: 0.5)),
-                ),
-              ),
-            ),
-          ),
+          const GlobalSearchField(),
           const SizedBox(width: 16),
-          _NavIconButton(
-            icon: Icons.notifications_none,
-            badge: true,
-            onTap: (_, __) {},
+          ListenableBuilder(
+            listenable: SecurityAlertService.instance,
+            builder: (context, _) {
+              final unread = SecurityAlertService.instance.unreadCount;
+              return _NavIconButton(
+                icon: Icons.notifications_none,
+                badge: unread > 0,
+                badgeCount: unread,
+                onTap: (_, anchor) => onAlertsTap(),
+              );
+            },
           ),
           const SizedBox(width: 8),
-          _CopilotNavButton(onTap: onCopilotTap),
-          const SizedBox(width: 4),
           _NavIconButton(
             icon: Icons.person_outline,
             avatar: true,
@@ -490,74 +531,19 @@ class _TopNavbar extends StatelessWidget {
   }
 }
 
-class _CopilotNavButton extends StatefulWidget {
-  const _CopilotNavButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  State<_CopilotNavButton> createState() => _CopilotNavButtonState();
-}
-
-class _CopilotNavButtonState extends State<_CopilotNavButton> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: Tooltip(
-        message: 'Security Copilot',
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: widget.onTap,
-            borderRadius: BorderRadius.circular(8),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: _hover ? AppColors.cyan.withValues(alpha: 0.12) : AppColors.border,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: _hover ? AppColors.cyan.withValues(alpha: 0.35) : AppColors.borderElevated,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.auto_awesome, color: AppColors.cyanLight, size: 16),
-                  SizedBox(width: 6),
-                  Text(
-                    'Copilot',
-                    style: TextStyle(
-                      color: AppColors.cyanLight,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _NavIconButton extends StatefulWidget {
   const _NavIconButton({
     required this.icon,
     required this.onTap,
     this.badge = false,
+    this.badgeCount = 0,
     this.avatar = false,
   });
 
   final IconData icon;
   final void Function(BuildContext context, Offset globalPosition) onTap;
   final bool badge;
+  final int badgeCount;
   final bool avatar;
 
   @override
@@ -579,7 +565,10 @@ class _NavIconButtonState extends State<_NavIconButton> {
           final box = _key.currentContext?.findRenderObject() as RenderBox?;
           if (box == null) return;
           final position = box.localToGlobal(Offset.zero);
-          widget.onTap(context, Offset(position.dx, position.dy + box.size.height));
+          widget.onTap(
+            context,
+            Offset(position.dx, position.dy + box.size.height),
+          );
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
@@ -599,15 +588,41 @@ class _NavIconButtonState extends State<_NavIconButton> {
                     color: AppColors.cyan.withValues(alpha: 0.2),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(widget.icon, color: AppColors.cyanLight, size: 20),
+                  child: Icon(
+                    widget.icon,
+                    color: AppColors.cyanLight,
+                    size: 20,
+                  ),
                 )
               else
                 Icon(widget.icon, color: AppColors.textMuted, size: 20),
               if (widget.badge)
-                const Positioned(
-                  right: 0,
-                  top: 0,
-                  child: Icon(Icons.circle, color: AppColors.red, size: 8),
+                Positioned(
+                  right: -2,
+                  top: -2,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.red,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 14,
+                      minHeight: 14,
+                    ),
+                    child: Text(
+                      widget.badgeCount > 9 ? '9+' : '${widget.badgeCount}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
                 ),
             ],
           ),
@@ -621,12 +636,14 @@ class _MobileHeader extends StatelessWidget {
   const _MobileHeader({
     required this.backendLive,
     required this.pageTitle,
-    required this.onCopilotTap,
+    required this.onAlertsTap,
+    required this.onSearchTap,
   });
 
   final bool backendLive;
   final String pageTitle;
-  final VoidCallback onCopilotTap;
+  final VoidCallback onAlertsTap;
+  final VoidCallback onSearchTap;
 
   @override
   Widget build(BuildContext context) {
@@ -658,20 +675,154 @@ class _MobileHeader extends StatelessWidget {
                 Text(
                   backendLive ? 'Backend connected' : 'Backend offline',
                   style: TextStyle(
-                    color: backendLive ? AppColors.greenLight : AppColors.textDim,
+                    color: backendLive
+                        ? AppColors.greenLight
+                        : AppColors.textDim,
                     fontSize: 11,
                   ),
                 ),
               ],
             ),
           ),
+
           IconButton(
-            onPressed: onCopilotTap,
-            icon: Icon(Icons.auto_awesome, color: AppColors.cyanLight, size: 22),
-            tooltip: 'Security Copilot',
+            onPressed: onSearchTap,
+            icon: Icon(Icons.search, color: AppColors.textMuted, size: 22),
+            tooltip: 'Search',
           ),
-          Icon(Icons.notifications_none, color: AppColors.textMuted, size: 22),
+          ListenableBuilder(
+            listenable: SecurityAlertService.instance,
+            builder: (context, _) {
+              final unread = SecurityAlertService.instance.unreadCount;
+              return IconButton(
+                onPressed: onAlertsTap,
+                tooltip: 'Alerts',
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(
+                      Icons.notifications_none,
+                      color: AppColors.textMuted,
+                      size: 22,
+                    ),
+                    if (unread > 0)
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: const BoxDecoration(
+                            color: AppColors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            unread > 9 ? '9+' : '$unread',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _AlertToastOverlay extends StatelessWidget {
+  const _AlertToastOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: SecurityAlertService.instance,
+      builder: (context, _) {
+        final alert = SecurityAlertService.instance.bannerAlert;
+        if (alert == null) return const SizedBox.shrink();
+
+        final padding = MediaQuery.paddingOf(context);
+        final isWide = MediaQuery.sizeOf(context).width >= 600;
+
+        return Positioned(
+          top: padding.top + (isWide ? 72 : 56),
+          left: isWide ? null : 16,
+          right: 16,
+          child: Align(
+            alignment: isWide ? Alignment.topRight : Alignment.topCenter,
+            child: GestureDetector(
+              onTap: () {
+                SecurityAlertService.instance.dismissBanner();
+                showSecurityAlertsPanel(context);
+              },
+              child: SecurityAlertToast(
+                alert: alert,
+                onDismiss: SecurityAlertService.instance.dismissBanner,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _CopilotFab extends StatelessWidget {
+  const _CopilotFab({
+    required this.isOpen,
+    required this.onTap,
+    required this.onClose,
+  });
+
+  final bool isOpen;
+  final VoidCallback onTap;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    // When the Copilot panel is open, the overlay already provides a close (X) button.
+    // Keeping another floating X causes overlap with page UI (e.g. chat input/send).
+    if (isOpen) return const SizedBox.shrink();
+
+    final padding = MediaQuery.paddingOf(context);
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final hasKeyboard = bottomInset > 0;
+    final isWide = MediaQuery.sizeOf(context).width >= 600;
+
+    // Keep it out of the way of the mobile bottom nav.
+    final baseBottom = isWide ? 20.0 : 84.0;
+    final bottom = hasKeyboard ? 20.0 : baseBottom;
+    final size = isWide ? 44.0 : 48.0;
+
+    return Positioned(
+      right: isWide ? 14 : 18,
+      bottom: padding.bottom + bottom,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(size / 2),
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: AppColors.panel,
+              borderRadius: BorderRadius.circular(size / 2),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Icon(
+              Icons.chat_bubble_outline,
+              color: AppColors.cyanLight,
+              size: isWide ? 20 : 22,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -706,13 +857,17 @@ class _MobileBottomNav extends StatelessWidget {
                     Icon(
                       _mobileNavItems[i].$1,
                       size: 20,
-                      color: activeIndex == i ? AppColors.cyanLight : AppColors.textDim,
+                      color: activeIndex == i
+                          ? AppColors.cyanLight
+                          : AppColors.textDim,
                     ),
                     const SizedBox(height: 4),
                     Text(
                       _mobileNavItems[i].$2,
                       style: TextStyle(
-                        color: activeIndex == i ? AppColors.cyanLight : AppColors.textDim,
+                        color: activeIndex == i
+                            ? AppColors.cyanLight
+                            : AppColors.textDim,
                         fontSize: 11,
                       ),
                     ),
@@ -725,4 +880,3 @@ class _MobileBottomNav extends StatelessWidget {
     );
   }
 }
-

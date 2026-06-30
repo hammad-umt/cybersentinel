@@ -1,5 +1,6 @@
 import 'package:cybersentinel/auth/auth_navigator.dart';
 import 'package:cybersentinel/auth/protected_main_shell.dart';
+import 'package:cybersentinel/services/reset_link_handler.dart';
 import 'package:cybersentinel/services/auth_service.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
 import 'package:cybersentinel/theme/app_theme.dart';
@@ -40,7 +41,7 @@ class _AuthGateState extends State<AuthGate> {
           return const ProtectedMainShell();
         }
 
-        final resetToken = Uri.base.queryParameters['token'];
+        final resetToken = ResetLinkHandler.initialToken;
         // Auth screens always use the branded dark cyber layout.
         return Theme(
           data: AppTheme.dark(),

@@ -107,9 +107,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
 
   Future<bool> _showCaptureSettingsDialog({required bool forStart}) async {
     await _capture.loadInterfaces();
-    if (_capture.interfaces.isNotEmpty && _capture.selectedInterfaceIndex == null) {
-      _capture.selectInterface(_capture.interfaces.first.index);
-    }
+    _capture.autoSelectInterface();
     if (mounted) setState(() {});
 
     if (!mounted) return false;
@@ -158,21 +156,32 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
                 children: [
                   Text(
                     forStart
-                        ? 'Choose a network interface and capture engine before starting.'
-                        : 'Adjust interface, filter, and capture engine.',
+                        ? 'The active network interface is chosen automatically (Wi‑Fi or Ethernet with a live IP).'
+                        : 'Optional capture engine and filter settings.',
                     style: TextStyle(color: AppColors.textMuted, fontSize: 13, height: 1.4),
                   ),
-                  const SizedBox(height: 18),
-                  Text(
-                    'Network interface',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                  const SizedBox(height: 12),
+                  if (_capture.selectedInterface != null)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.border,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.borderElevated),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.settings_ethernet, color: AppColors.cyanLight, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _capture.selectedInterface!.label,
+                              style: TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildInterfaceSelector(compact: false, inDialog: true),
                   const SizedBox(height: 16),
                   TextField(
                     controller: _bpfController,
@@ -246,8 +255,7 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
               ),
               if (forStart)
                 ElevatedButton.icon(
-                  onPressed: _capture.interfaces.isEmpty ||
-                          _capture.selectedInterfaceIndex == null
+                  onPressed: _capture.interfaces.isEmpty
                       ? null
                       : () => Navigator.pop(ctx, true),
                   icon: Icon(Icons.play_arrow_rounded, size: 18),
@@ -301,9 +309,17 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
 
     try {
       if (!_isCapturing) {
-        final confirmed = await _showCaptureSettingsDialog(forStart: true);
-        if (!confirmed || !mounted) return;
+        final ready = await _capture.prepareForCapture();
+        if (!ready) {
+          throw Exception('No active network interface found for capture');
+        }
         await _capture.startCapture();
+        if (mounted) {
+          final iface = _capture.selectedInterface?.label ?? 'default interface';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Capture started on $iface')),
+          );
+        }
       } else {
         await _capture.stopCapture();
       }
@@ -418,6 +434,34 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
             ),
           );
 
+          final ifaceChip = ListenableBuilder(
+            listenable: _capture,
+            builder: (context, _) {
+              final label = _capture.selectedInterface?.label ??
+                  _capture.activeInterfaceName ??
+                  'Auto interface';
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.borderElevated),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.settings_ethernet, size: 14, color: AppColors.textMuted),
+                    const SizedBox(width: 6),
+                    Text(
+                      label,
+                      style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+
           final filters = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -461,6 +505,8 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 captureBtn,
+                const SizedBox(height: 12),
+                ifaceChip,
                 const SizedBox(height: 16),
                 filters,
               ],
@@ -471,78 +517,14 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               captureBtn,
+              const SizedBox(width: 12),
+              ifaceChip,
               const Spacer(),
               Flexible(child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: filters)),
             ],
           );
         },
       ),
-    );
-  }
-
-  Widget _buildInterfaceSelector({bool compact = true, bool inDialog = false}) {
-    if (_capture.isLoadingInterfaces) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.settings_ethernet, color: AppColors.textMuted, size: 20),
-          SizedBox(width: 8),
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.cyan),
-          ),
-          SizedBox(width: 8),
-          Text('Loading interfaces...', style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
-        ],
-      );
-    }
-
-    if (_capture.interfaces.isEmpty) {
-      return Row(
-        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
-        children: [
-          Icon(Icons.settings_ethernet, color: AppColors.textMuted, size: 20),
-          const SizedBox(width: 8),
-           Expanded(
-            child: Text('No interfaces found', style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
-          ),
-          TextButton(
-            onPressed: _capture.loadInterfaces,
-            child: Text('Refresh', style: TextStyle(color: AppColors.cyanLight)),
-          ),
-        ],
-      );
-    }
-
-    final selected = _capture.selectedInterfaceIndex ?? _capture.interfaces.first.index;
-
-    return Row(
-      children: [
-        if (compact) ...[
-          Icon(Icons.settings_ethernet, color: AppColors.textMuted, size: 20),
-          const SizedBox(width: 8),
-        ],
-        Expanded(
-          child: _styledDropdown<int>(
-            value: selected,
-            enabled: inDialog || !_isCapturing,
-            items: [
-              for (final iface in _capture.interfaces)
-                DropdownMenuItem(
-                  value: iface.index,
-                  child: Text(iface.label, overflow: TextOverflow.ellipsis),
-                ),
-            ],
-            onChanged: (v) {
-              if (v != null) {
-                _capture.selectInterface(v);
-                setState(() {});
-              }
-            },
-          ),
-        ),
-      ],
     );
   }
 

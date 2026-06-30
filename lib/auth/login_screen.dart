@@ -70,10 +70,9 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return AuthScaffold(
-      stepLabel: 'Sign in',
-      title: 'Welcome back',
-      subtitle: 'Enter your credentials to open the CyberSentinel SOC dashboard.',
-      heroIcon: Icons.login_rounded,
+      title: '',
+      subtitle: '',
+      heroIcon: Icons.shield_outlined,
       child: AutofillGroup(
         child: Form(
           key: _formKey,
@@ -81,71 +80,71 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            AuthModeTabs(
+              activeIndex: 0,
+              onSelect: (i) {
+                if (i == 1) {
+                  Navigator.of(context).pushNamed(AuthNavigator.registerRoute);
+                }
+              },
+            ),
+            const SizedBox(height: 22),
             if (_formError != null) ...[
               AuthFormAlert.error(message: _formError!),
               const SizedBox(height: 20),
             ],
             AuthFormSection(
-              label: 'Account credentials',
-              child: Column(
-                children: [
-                  AuthTextField(
-                    controller: _emailController,
-                    focusNode: _emailFocus,
-                    label: 'Work email',
-                    hint: 'analyst@company.com',
-                    helperText: 'Use the email registered with your organization.',
-                    errorText: _submitted ? _emailError : null,
-                    prefixIcon: Icons.alternate_email_rounded,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const [AutofillHints.email, AutofillHints.username],
-                    onChanged: (_) {
-                      if (_submitted) _validate();
-                    },
-                    onSubmitted: (_) => _passwordFocus.requestFocus(),
-                  ),
-                  const SizedBox(height: 16),
-                  AuthTextField(
-                    controller: _passwordController,
-                    focusNode: _passwordFocus,
-                    label: 'Password',
-                    hint: 'Enter your password',
-                    errorText: _submitted ? _passwordError : null,
-                    prefixIcon: Icons.lock_outline_rounded,
-                    obscureText: true,
-                    textInputAction: TextInputAction.done,
-                    autofillHints: const [AutofillHints.password],
-                    onChanged: (_) {
-                      if (_submitted) _validate();
-                    },
-                    onSubmitted: (_) => _login(),
-                  ),
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: AuthLinkButton(
-                      label: 'Forgot password?',
-                      onPressed: _loading
-                          ? () {}
-                          : () => Navigator.of(context).pushNamed(AuthNavigator.forgotRoute),
-                    ),
-                  ),
-                ],
+              label: 'EMAIL',
+              child: AuthTextField(
+                controller: _emailController,
+                focusNode: _emailFocus,
+                label: 'Email',
+                hint: 'you@example.com',
+                errorText: _submitted ? _emailError : null,
+                prefixIcon: Icons.alternate_email_rounded,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.email, AutofillHints.username],
+                onChanged: (_) {
+                  if (_submitted) _validate();
+                },
+                onSubmitted: (_) => _passwordFocus.requestFocus(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            AuthFormSection(
+              label: 'PASSWORD',
+              child: AuthTextField(
+                controller: _passwordController,
+                focusNode: _passwordFocus,
+                label: 'Password',
+                hint: '••••••••',
+                errorText: _submitted ? _passwordError : null,
+                prefixIcon: Icons.lock_outline_rounded,
+                obscureText: true,
+                textInputAction: TextInputAction.done,
+                autofillHints: const [AutofillHints.password],
+                onChanged: (_) {
+                  if (_submitted) _validate();
+                },
+                onSubmitted: (_) => _login(),
               ),
             ),
             const SizedBox(height: 8),
-            AuthCtaBlock(
-              primaryLabel: 'Sign in to dashboard',
-              primaryIcon: Icons.arrow_forward_rounded,
-              primaryLoading: _loading,
-              helperText: 'Session expires after 60 minutes of inactivity.',
-              secondaryPrompt: "Don't have an account?",
-              secondaryActionLabel: 'Create account',
-              onPrimary: _loading ? null : _login,
-              onSecondaryAction: _loading
-                  ? null
-                  : () => Navigator.of(context).pushNamed(AuthNavigator.registerRoute),
+            Align(
+              alignment: Alignment.center,
+              child: AuthLinkButton(
+                label: 'Forgot password?',
+                onPressed: _loading
+                    ? () {}
+                    : () => Navigator.of(context).pushNamed(AuthNavigator.forgotRoute),
+              ),
+            ),
+            const SizedBox(height: 14),
+            AuthAuthButton(
+              label: 'Sign In',
+              loading: _loading,
+              onPressed: _loading ? null : _login,
             ),
           ],
         ),

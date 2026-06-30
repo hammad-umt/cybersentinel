@@ -1,3 +1,4 @@
+import 'package:cybersentinel/auth/auth_navigator.dart';
 import 'package:cybersentinel/auth/auth_validators.dart';
 import 'package:cybersentinel/auth/auth_widgets.dart';
 import 'package:cybersentinel/services/auth_service.dart';
@@ -63,13 +64,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     return AuthScaffold(
       showBack: true,
       backLabel: 'Back to sign in',
-      stepLabel: _sent ? 'Check your email' : 'Password recovery · Step 1 of 2',
-      title: _sent ? 'Check your inbox' : 'Reset your password',
+      stepLabel: _sent ? 'Check your email' : null,
+      title: _sent ? 'Check your email' : 'Reset password',
       subtitle: _sent
-          ? 'If an account exists for that address, we sent a secure reset link.'
-          : 'We\'ll email you a one-time link to choose a new password.',
+          ? 'If that email is registered, you’ll get a reset link in a moment.'
+          : 'We’ll send a reset link to your email.',
       heroIcon: Icons.mail_lock_outlined,
-      heroTagline: 'Password recovery with secure, time-limited tokens',
+      heroTagline: 'Recover access to your account',
       child: _sent ? _buildSuccessState() : _buildFormState(),
     );
   }
@@ -83,13 +84,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           const SizedBox(height: 20),
         ],
         AuthFormSection(
-          label: 'Recovery email',
+          label: 'Email',
           child: AuthTextField(
             controller: _emailController,
             focusNode: _emailFocus,
             label: 'Email address',
-            hint: 'user@company.com',
-            helperText: 'For security, we show the same message whether or not the email exists.',
+            hint: 'name@company.com',
+            helperText: 'For privacy, we don’t confirm whether an email exists.',
             errorText: _submitted ? _emailError : null,
             prefixIcon: Icons.alternate_email_rounded,
             keyboardType: TextInputType.emailAddress,
@@ -106,7 +107,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           primaryLabel: 'Send reset link',
           primaryIcon: Icons.send_rounded,
           primaryLoading: _loading,
-          helperText: 'Links expire after a short period for your protection.',
           onPrimary: _loading ? null : _submit,
         ),
       ],
@@ -140,6 +140,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             _emailError = null;
             _formError = null;
           }),
+        ),
+        const SizedBox(height: 12),
+        AuthSecondaryButton(
+          label: 'Paste reset link manually',
+          icon: Icons.content_paste_go_rounded,
+          onPressed: () => Navigator.of(context).pushNamed(AuthNavigator.resetRoute),
         ),
       ],
     );

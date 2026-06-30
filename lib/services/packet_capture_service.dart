@@ -23,8 +23,10 @@ class PacketCaptureService extends ChangeNotifier {
   int? selectedInterfaceIndex;
   String bpfFilter = '';
   bool useTshark = false;
-  int packetLimit = 100;
-  int timeoutSeconds = 30;
+  int packetLimit = 10000;
+  int timeoutSeconds = 86400;
+
+  int? recommendedInterfaceIndex;
 
   Timer? _pollTimer;
   bool _initialized = false;
@@ -57,7 +59,11 @@ class PacketCaptureService extends ChangeNotifier {
     try {
       final data = await ApiService.instance.getCaptureInterfaces();
       interfaces = CaptureInterface.parseList(data);
-      _ensureSelectedInterface();
+      final rec = data['recommended_index'];
+      recommendedInterfaceIndex = rec is int
+          ? rec
+          : int.tryParse(rec?.toString() ?? '');
+      autoSelectInterface();
       lastError = interfaces.isEmpty ? 'No capture interfaces found on backend' : null;
     } catch (e) {
       if (interfaces.isEmpty) {
@@ -69,10 +75,93 @@ class PacketCaptureService extends ChangeNotifier {
     }
   }
 
-  void selectInterface(int index) {
-    if (isCapturing) return;
-    selectedInterfaceIndex = index;
+  /// Pick the network interface that is actually connected (routable IPv4, link up).
+  bool autoSelectInterface() {
+    if (interfaces.isEmpty) {
+      selectedInterfaceIndex = null;
+      return false;
+    }
+
+    if (isCapturing && activeInterfaceName != null) {
+      for (final iface in interfaces) {
+        if (iface.name.toLowerCase() == activeInterfaceName!.toLowerCase()) {
+          selectedInterfaceIndex = iface.index;
+          notifyListeners();
+          return true;
+        }
+      }
+    }
+
+    if (recommendedInterfaceIndex != null &&
+        interfaces.any((i) => i.index == recommendedInterfaceIndex)) {
+      final rec = interfaces.firstWhere((i) => i.index == recommendedInterfaceIndex);
+      if (rec.isConnected) {
+        selectedInterfaceIndex = rec.index;
+        notifyListeners();
+        return true;
+      }
+    }
+
+    CaptureInterface? best;
+    var bestScore = -99999;
+
+    for (final iface in interfaces) {
+      final score = _scoreInterface(iface);
+      if (score > bestScore) {
+        best = iface;
+        bestScore = score;
+      }
+    }
+
+    if (best == null || bestScore < 0) {
+      selectedInterfaceIndex = null;
+      lastError = 'No connected network interface found (check Wi‑Fi or Ethernet).';
+      notifyListeners();
+      return false;
+    }
+
+    selectedInterfaceIndex = best.index;
     notifyListeners();
+    return true;
+  }
+
+  int _scoreInterface(CaptureInterface iface) {
+    if (!iface.isConnected) return -10000;
+
+    final label = '${iface.name} ${iface.description}'.toLowerCase();
+    var score = 1000;
+
+    if (label.contains('loopback') || iface.name.toLowerCase() == 'lo') {
+      return -20000;
+    }
+    if (label.contains('virtual') ||
+        label.contains('vmware') ||
+        label.contains('vethernet') ||
+        label.contains('hyper-v') ||
+        label.contains('bluetooth') ||
+        label.contains('npcap loopback')) {
+      score -= 300;
+    }
+
+    // Tiny tie-breaker only between connected adapters.
+    if (label.contains('ethernet') ||
+        label.contains('eth ') ||
+        label.startsWith('eth')) {
+      score += 5;
+    }
+    if (label.contains('wi-fi') ||
+        label.contains('wifi') ||
+        label.contains('wlan') ||
+        label.contains('wireless')) {
+      score += 3;
+    }
+
+    return score;
+  }
+
+  Future<bool> prepareForCapture() async {
+    await loadInterfaces();
+    return autoSelectInterface();
   }
 
   void setBpfFilter(String value) {
@@ -113,7 +202,7 @@ class PacketCaptureService extends ChangeNotifier {
     final current = selectedInterfaceIndex;
     if (current != null && interfaces.any((i) => i.index == current)) return;
 
-    selectedInterfaceIndex = interfaces.first.index;
+    autoSelectInterface();
   }
 
   void _startPolling() {
@@ -180,6 +269,10 @@ class PacketCaptureService extends ChangeNotifier {
   Future<void> startCapture() async {
     if (!ApiConfig.isConfigured) {
       throw Exception('Please sign in to continue');
+    }
+
+    if (!autoSelectInterface()) {
+      throw Exception('No active network interface found for capture');
     }
 
     lastError = null;
@@ -309,13 +402,33 @@ class CaptureInterface {
     required this.index,
     required this.name,
     this.description = '',
+    this.ipAddresses = const [],
+    this.isUp = true,
   });
 
   final int index;
   final String name;
   final String description;
+  final List<String> ipAddresses;
+  final bool isUp;
 
   String get label => description.isNotEmpty ? '$name — $description' : name;
+
+  bool get isConnected =>
+      isUp && ipAddresses.any((ip) => CaptureInterface._isRoutableIpv4(ip));
+
+  static bool _isRoutableIpv4(String ip) {
+    if (ip.isEmpty || !ip.contains('.')) return false;
+    if (ip.startsWith('127.') || ip.startsWith('169.254.') || ip == '0.0.0.0') {
+      return false;
+    }
+    final parts = ip.split('.');
+    if (parts.length != 4) return false;
+    return parts.every((p) {
+      final n = int.tryParse(p);
+      return n != null && n >= 0 && n <= 255;
+    });
+  }
 
   static List<CaptureInterface> parseList(Map<String, dynamic> data) {
     final maps = ApiService.extractList(
@@ -363,10 +476,24 @@ class CaptureInterface {
         m['type']?.toString() ??
         '';
 
+    final ipsRaw = m['ip_addresses'] ?? m['ips'];
+    final ips = <String>[];
+    if (ipsRaw is List) {
+      for (final ip in ipsRaw) {
+        final s = ip?.toString() ?? '';
+        if (_isRoutableIpv4(s)) ips.add(s);
+      }
+    }
+
+    final explicitUp = m['is_up'];
+    final isUp = explicitUp == true || (explicitUp == null && ips.isNotEmpty);
+
     return CaptureInterface(
       index: index,
       name: name.toString(),
       description: description == name.toString() ? '' : description,
+      ipAddresses: ips,
+      isUp: isUp,
     );
   }
 }
@@ -401,15 +528,16 @@ class LivePacket {
         p['label'] ??
         'Normal';
     final timestamp = p['timestamp'] ?? p['captured_at'] ?? p['created_at'];
+    final raw = p['raw_hex']?.toString() ?? p['hex']?.toString() ?? p['raw']?.toString() ?? '';
     return LivePacket(
       ip: p['src_ip']?.toString() ?? p['ip']?.toString() ?? '-',
       port: (p['dst_port'] ?? p['port'])?.toString() ?? '-',
       protocol: p['protocol']?.toString() ?? '-',
-      size: _formatSize(p['pkt_size'] ?? p['packet_size'] ?? p['size']),
+      size: _formatSize(_inferPacketSize(p, raw)),
       status: _normalizeStatus(prediction.toString()),
       time: _formatTime(timestamp),
       sortKey: timestamp?.toString() ?? '',
-      raw: p['raw_hex']?.toString() ?? p['hex']?.toString() ?? p['raw']?.toString() ?? '',
+      raw: raw,
     );
   }
 
@@ -438,5 +566,18 @@ class LivePacket {
     if (n <= 0) return '-';
     if (n >= 1024) return '${(n / 1024).toStringAsFixed(1)} KB';
     return '$n B';
+  }
+
+  static int? _inferPacketSize(Map<String, dynamic> p, String raw) {
+    final direct = p['pkt_size'] ?? p['packet_size'] ?? p['size'] ?? p['len'] ?? p['length'];
+    final directN = direct is num ? direct.toInt() : int.tryParse(direct?.toString() ?? '');
+    if (directN != null && directN > 0) return directN;
+
+    // Fallback: if we have a hex payload (common in stored events), infer bytes.
+    final hex = raw.replaceAll(RegExp(r'[^0-9a-fA-F]'), '');
+    if (hex.length >= 2) {
+      return (hex.length / 2).floor();
+    }
+    return null;
   }
 }

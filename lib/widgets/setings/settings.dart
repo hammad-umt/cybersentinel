@@ -105,7 +105,10 @@ class _SettingsContentState extends State<SettingsContent> {
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(color: AppColors.borderElevated),
         ),
-        title: Text('Sign out?', style: TextStyle(color: AppColors.textPrimary)),
+        title: Text(
+          'Sign out?',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
         content: Text(
           'You will need to sign in again to access dashboards and security tools.',
           style: TextStyle(color: AppColors.textMuted, height: 1.45),
@@ -117,7 +120,10 @@ class _SettingsContentState extends State<SettingsContent> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Sign out', style: TextStyle(color: AppColors.redLight)),
+            child: Text(
+              'Sign out',
+              style: TextStyle(color: AppColors.redLight),
+            ),
           ),
         ],
       ),
@@ -132,7 +138,9 @@ class _SettingsContentState extends State<SettingsContent> {
       final parts = local.split('.');
       return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
     }
-    return local.length >= 2 ? local.substring(0, 2).toUpperCase() : local[0].toUpperCase();
+    return local.length >= 2
+        ? local.substring(0, 2).toUpperCase()
+        : local[0].toUpperCase();
   }
 
   @override
@@ -154,7 +162,8 @@ class _SettingsContentState extends State<SettingsContent> {
                 children: [
                   PageHeader(
                     title: 'Settings',
-                    subtitle: 'Manage your account, notifications, and how CyberSentinel looks and feels.',
+                    subtitle:
+                        'Manage your account, notifications, and how CyberSentinel looks and feels.',
                     icon: Icons.settings_outlined,
                   ),
                   _AccountCard(
@@ -168,7 +177,8 @@ class _SettingsContentState extends State<SettingsContent> {
                   _SettingsSection(
                     icon: Icons.brightness_4_outlined,
                     title: 'Appearance',
-                    subtitle: 'Choose a theme that is comfortable for long investigation sessions.',
+                    subtitle:
+                        'Choose a theme that is comfortable for long investigation sessions.',
                     child: _ThemePicker(
                       selected: selectedTheme,
                       onChanged: (v) => setState(() => selectedTheme = v),
@@ -178,21 +188,25 @@ class _SettingsContentState extends State<SettingsContent> {
                   _SettingsSection(
                     icon: Icons.notifications_outlined,
                     title: 'Notifications',
-                    subtitle: 'Control how and when you are alerted to new threats.',
+                    subtitle:
+                        'Control how and when you are alerted to new threats.',
                     child: Column(
                       children: [
                         _SettingToggle(
                           title: 'Email alerts',
-                          description: 'Receive a summary when high-severity threats are detected.',
+                          description:
+                              'Receive a summary when high-severity threats are detected.',
                           value: emailAlerts,
                           onChanged: (v) => setState(() => emailAlerts = v),
                         ),
                         const SizedBox(height: 12),
                         _SettingToggle(
                           title: 'Push notifications',
-                          description: 'Get real-time alerts on this device while the app is open.',
+                          description:
+                              'Get real-time alerts on this device while the app is open.',
                           value: pushNotifications,
-                          onChanged: (v) => setState(() => pushNotifications = v),
+                          onChanged: (v) =>
+                              setState(() => pushNotifications = v),
                         ),
                       ],
                     ),
@@ -201,19 +215,23 @@ class _SettingsContentState extends State<SettingsContent> {
                   _SettingsSection(
                     icon: Icons.public_outlined,
                     title: 'Monitoring',
-                    subtitle: 'Background services that keep your environment under watch.',
+                    subtitle:
+                        'Background services that keep your environment under watch.',
                     child: _SettingToggle(
                       title: 'Background monitoring',
-                      description: 'Continuously analyse network traffic for suspicious activity.',
+                      description:
+                          'Continuously analyse network traffic for suspicious activity.',
                       value: backgroundMonitoring,
-                      onChanged: (v) => setState(() => backgroundMonitoring = v),
+                      onChanged: (v) =>
+                          setState(() => backgroundMonitoring = v),
                     ),
                   ),
                   const SizedBox(height: _Hci.sectionGap),
                   _SettingsSection(
                     icon: Icons.key_outlined,
                     title: 'Threat intelligence keys',
-                    subtitle: 'Optional integrations for deeper file, URL, and IP lookups.',
+                    subtitle:
+                        'Optional integrations for deeper file, URL, and IP lookups.',
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -221,12 +239,6 @@ class _SettingsContentState extends State<SettingsContent> {
                           label: 'VirusTotal',
                           hint: 'Paste your VirusTotal API key',
                           helper: 'Used for file and URL reputation scans.',
-                        ),
-                        const SizedBox(height: 16),
-                        _ApiKeyField(
-                          label: 'GeoIP',
-                          hint: 'Paste your GeoIP API key',
-                          helper: 'Enriches IP analysis with location data.',
                         ),
                         const SizedBox(height: 16),
                         _ApiKeyField(
@@ -248,7 +260,10 @@ class _SettingsContentState extends State<SettingsContent> {
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
                               )
                             : const Icon(Icons.check_rounded, size: 18),
                         label: Text(_saving ? 'Saving…' : 'Save preferences'),
@@ -257,7 +272,9 @@ class _SettingsContentState extends State<SettingsContent> {
                           foregroundColor: Colors.white,
                           disabledBackgroundColor: AppColors.borderElevated,
                           padding: const EdgeInsets.symmetric(horizontal: 24),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
                       ),
                     ),
@@ -294,13 +311,13 @@ class _AccountCard extends StatelessWidget {
     final statusLabel = isOnline == null
         ? 'Checking status…'
         : isOnline!
-            ? 'All services operational'
-            : 'Some services unavailable';
+        ? 'All services operational'
+        : 'Some services unavailable';
     final statusColor = isOnline == null
         ? AppColors.textDim
         : isOnline!
-            ? AppColors.greenLight
-            : AppColors.orangeLight;
+        ? AppColors.greenLight
+        : AppColors.orangeLight;
 
     return CyberCard(
       padding: const EdgeInsets.all(24),
@@ -349,11 +366,16 @@ class _AccountCard extends StatelessWidget {
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.cyan.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: AppColors.cyan.withValues(alpha: 0.25)),
+                        border: Border.all(
+                          color: AppColors.cyan.withValues(alpha: 0.25),
+                        ),
                       ),
                       child: Text(
                         role,
@@ -368,19 +390,28 @@ class _AccountCard extends StatelessWidget {
                     Container(
                       width: 7,
                       height: 7,
-                      decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                     const SizedBox(width: 6),
                     Text(
                       statusLabel,
-                      style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12),
+                      style: GoogleFonts.inter(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'Signed in · Session active',
-                  style: GoogleFonts.inter(color: AppColors.textDim, fontSize: 12),
+                  style: GoogleFonts.inter(
+                    color: AppColors.textDim,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
@@ -389,13 +420,22 @@ class _AccountCard extends StatelessWidget {
             height: _Hci.minTouchTarget,
             child: OutlinedButton.icon(
               onPressed: onSignOut,
-              icon: Icon(Icons.logout_rounded, size: 16, color: AppColors.redLight),
-              label: Text('Sign out', style: TextStyle(color: AppColors.redLight, fontSize: 13)),
+              icon: Icon(
+                Icons.logout_rounded,
+                size: 16,
+                color: AppColors.redLight,
+              ),
+              label: Text(
+                'Sign out',
+                style: TextStyle(color: AppColors.redLight, fontSize: 13),
+              ),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: AppColors.red.withValues(alpha: 0.35)),
                 backgroundColor: AppColors.red.withValues(alpha: 0.06),
                 padding: const EdgeInsets.symmetric(horizontal: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
           ),
@@ -441,7 +481,11 @@ class _SettingsSection extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             subtitle,
-            style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13, height: 1.4),
+            style: GoogleFonts.inter(
+              color: AppColors.textMuted,
+              fontSize: 13,
+              height: 1.4,
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 20),
@@ -535,21 +579,33 @@ class _ThemePicker extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: _ThemeOption(
-          label: 'Light',
-          icon: Icons.wb_sunny_outlined,
-          previewColors: const [Color(0xFFF8FAFC), Color(0xFFFFFFFF), Color(0xFFE2E8F0)],
-          isSelected: selected == 'light',
-          onTap: () => onChanged('light'),
-        )),
+        Expanded(
+          child: _ThemeOption(
+            label: 'Light',
+            icon: Icons.wb_sunny_outlined,
+            previewColors: const [
+              Color(0xFFF8FAFC),
+              Color(0xFFFFFFFF),
+              Color(0xFFE2E8F0),
+            ],
+            isSelected: selected == 'light',
+            onTap: () => onChanged('light'),
+          ),
+        ),
         const SizedBox(width: 12),
-        Expanded(child: _ThemeOption(
-          label: 'Dark',
-          icon: Icons.nights_stay_outlined,
-          previewColors: const [Color(0xFF0A0E1A), Color(0xFF0F1420), Color(0xFF1A1F2E)],
-          isSelected: selected == 'dark',
-          onTap: () => onChanged('dark'),
-        )),
+        Expanded(
+          child: _ThemeOption(
+            label: 'Dark',
+            icon: Icons.nights_stay_outlined,
+            previewColors: const [
+              Color(0xFF0A0E1A),
+              Color(0xFF0F1420),
+              Color(0xFF1A1F2E),
+            ],
+            isSelected: selected == 'dark',
+            onTap: () => onChanged('dark'),
+          ),
+        ),
       ],
     );
   }
@@ -611,7 +667,11 @@ class _ThemeOption extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 12),
-                Icon(icon, color: isSelected ? AppColors.cyan : AppColors.textMuted, size: 20),
+                Icon(
+                  icon,
+                  color: isSelected ? AppColors.cyan : AppColors.textMuted,
+                  size: 20,
+                ),
                 const SizedBox(height: 6),
                 Text(
                   label,
@@ -665,12 +725,21 @@ class _ApiKeyField extends StatelessWidget {
           cursorColor: AppColors.cyanLight,
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: GoogleFonts.inter(color: AppColors.textDim, fontSize: 14),
+            hintStyle: GoogleFonts.inter(
+              color: AppColors.textDim,
+              fontSize: 14,
+            ),
             helperText: helper,
-            helperStyle: GoogleFonts.inter(color: AppColors.textDim, fontSize: 11),
+            helperStyle: GoogleFonts.inter(
+              color: AppColors.textDim,
+              fontSize: 11,
+            ),
             filled: true,
             fillColor: AppColors.alertItemBg,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 14,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide.none,
@@ -681,7 +750,9 @@ class _ApiKeyField extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: AppColors.cyan.withValues(alpha: 0.5)),
+              borderSide: BorderSide(
+                color: AppColors.cyan.withValues(alpha: 0.5),
+              ),
             ),
           ),
         ),

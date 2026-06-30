@@ -16,7 +16,7 @@ class AuthScaffold extends StatelessWidget {
     this.showBack = false,
     this.backLabel = 'Back',
     this.heroIcon = Icons.shield_outlined,
-    this.heroTagline = 'Real-time threat detection & SOC intelligence',
+    this.heroTagline = 'Secure access to your SOC dashboard',
     this.stepLabel,
   });
 
@@ -31,62 +31,28 @@ class AuthScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 900;
-
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
           const _AuthBackground(),
-          SafeArea(
-            child: wide ? _buildWideLayout(context) : _buildNarrowLayout(context),
-          ),
+          SafeArea(child: _buildSingleColumn(context)),
         ],
       ),
     );
   }
 
-  Widget _buildWideLayout(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          flex: 5,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(48, 40, 24, 40),
-            child: _AuthHeroPanel(icon: heroIcon, tagline: heroTagline),
-          ),
-        ),
-        Expanded(
-          flex: 4,
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-              child: _AuthFormCard(
-                title: title,
-                subtitle: subtitle,
-                showBack: showBack,
-                backLabel: backLabel,
-                stepLabel: stepLabel,
-                child: child,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNarrowLayout(BuildContext context) {
+  Widget _buildSingleColumn(BuildContext context) {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460),
+          constraints: const BoxConstraints(maxWidth: 520),
           child: Column(
             children: [
-              const SizedBox(height: 8),
-              const _AuthBrandMark(compact: true),
-              const SizedBox(height: 24),
+              const SizedBox(height: 10),
+              const _AuthLoginHeader(),
+              const SizedBox(height: 22),
               _AuthFormCard(
                 title: title,
                 subtitle: subtitle,
@@ -95,8 +61,7 @@ class AuthScaffold extends StatelessWidget {
                 stepLabel: stepLabel,
                 child: child,
               ),
-              const SizedBox(height: 20),
-              const AuthTrustFooter(),
+              const SizedBox(height: 14),
             ],
           ),
         ),
@@ -112,31 +77,47 @@ class _AuthBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF050810), Color(0xFF0A0E1A), Color(0xFF0C1524), Color(0xFF081018)],
-          stops: [0.0, 0.35, 0.7, 1.0],
-        ),
+        color: AuthColors.bg,
       ),
       child: Stack(
         fit: StackFit.expand,
         children: [
+          // Subtle, non-gimmicky lighting so the screen feels “designed”, not “generated”.
           Positioned(
-            top: -120,
-            right: -80,
-            child: _GlowOrb(color: AuthColors.cyan.withValues(alpha: 0.2), size: 340),
+            top: -180,
+            right: -120,
+            child: _GlowOrb(color: AuthColors.cyan.withValues(alpha: 0.10), size: 420),
           ),
           Positioned(
-            bottom: -100,
-            left: -60,
-            child: _GlowOrb(color: AuthColors.violet.withValues(alpha: 0.14), size: 300),
+            bottom: -220,
+            left: -160,
+            child: _GlowOrb(color: AuthColors.violet.withValues(alpha: 0.08), size: 520),
           ),
-          CustomPaint(painter: _GridPainter()),
+          CustomPaint(painter: _SoftGridPainter()),
         ],
       ),
     );
   }
+}
+
+class _SoftGridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AuthColors.borderElevated.withValues(alpha: 0.22)
+      ..strokeWidth = 1;
+
+    const spacing = 56.0;
+    for (var x = 0.0; x < size.width; x += spacing) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (var y = 0.0; y < size.height; y += spacing) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _GlowOrb extends StatelessWidget {
@@ -157,161 +138,129 @@ class _GlowOrb extends StatelessWidget {
   }
 }
 
-class _GridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AuthColors.cyan.withValues(alpha: 0.035)
-      ..strokeWidth = 1;
-    const spacing = 48.0;
-    for (var x = 0.0; x < size.width; x += spacing) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (var y = 0.0; y < size.height; y += spacing) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _AuthHeroPanel extends StatelessWidget {
-  const _AuthHeroPanel({required this.icon, required this.tagline});
-  final IconData icon;
-  final String tagline;
+class _AuthLoginHeader extends StatelessWidget {
+  const _AuthLoginHeader();
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _AuthBrandMark(compact: false),
-        const Spacer(flex: 2),
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              colors: [
-                AuthColors.cyan.withValues(alpha: 0.22),
-                AuthColors.violet.withValues(alpha: 0.1),
-              ],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AuthColors.cyan.withValues(alpha: 0.3),
-                blurRadius: 36,
-              ),
-            ],
-          ),
-          child: Icon(icon, color: AuthColors.cyanLight, size: 40),
-        ),
-        const SizedBox(height: 24),
+        Icon(Icons.shield_outlined, color: AuthColors.greenLight, size: 26),
+        const SizedBox(height: 10),
         Text(
-          'Secure access to your\nsecurity operations center',
-          style: GoogleFonts.inter(
-            color: AuthColors.textPrimary,
-            fontSize: 32,
+          'CYBER  SENTINEL',
+          style: GoogleFonts.jetBrainsMono(
+            color: AuthColors.cyanLight,
+            fontSize: 28,
             fontWeight: FontWeight.w700,
-            height: 1.2,
-            letterSpacing: -0.5,
+            letterSpacing: 1.0,
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 6),
         Text(
-          tagline,
-          style: GoogleFonts.inter(color: AuthColors.textMuted, fontSize: 15, height: 1.55),
+          'SECURITY  INTELLIGENCE  PLATFORM',
+          style: GoogleFonts.jetBrainsMono(
+            color: AuthColors.textDim,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 2.6,
+          ),
+          textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 28),
-        const Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            _FeatureChip(label: 'Live capture', icon: Icons.radar),
-            _FeatureChip(label: 'Threat intel', icon: Icons.security),
-            _FeatureChip(label: 'Firewall AI', icon: Icons.shield),
-          ],
-        ),
-        const Spacer(flex: 3),
-        const AuthTrustFooter(),
       ],
     );
   }
 }
 
-class _FeatureChip extends StatelessWidget {
-  const _FeatureChip({required this.label, required this.icon});
-  final String label;
-  final IconData icon;
+class AuthModeTabs extends StatelessWidget {
+  const AuthModeTabs({
+    super.key,
+    required this.activeIndex,
+    required this.onSelect,
+  });
+
+  final int activeIndex; // 0 = sign in, 1 = sign up
+  final ValueChanged<int> onSelect;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: AuthColors.panel.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AuthColors.cyan.withValues(alpha: 0.18)),
+        color: AuthColors.inputBg.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AuthColors.borderElevated),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: AuthColors.cyanLight),
+          Expanded(
+            child: _AuthTabButton(
+              selected: activeIndex == 0,
+              label: 'Sign In',
+              icon: Icons.login_rounded,
+              onTap: () => onSelect(0),
+            ),
+          ),
           const SizedBox(width: 6),
-          Text(label, style: TextStyle(color: AuthColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w500)),
+          Expanded(
+            child: _AuthTabButton(
+              selected: activeIndex == 1,
+              label: 'Sign Up',
+              icon: Icons.person_add_alt_1_rounded,
+              onTap: () => onSelect(1),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _AuthBrandMark extends StatelessWidget {
-  const _AuthBrandMark({required this.compact});
-  final bool compact;
+class _AuthTabButton extends StatelessWidget {
+  const _AuthTabButton({
+    required this.selected,
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: EdgeInsets.all(compact ? 8 : 10),
+    final fg = selected ? Colors.black : AuthColors.textMuted;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            gradient: LinearGradient(
-              colors: [AuthColors.cyan.withValues(alpha: 0.28), AuthColors.cyan.withValues(alpha: 0.08)],
-            ),
-            border: Border.all(color: AuthColors.cyan.withValues(alpha: 0.32)),
+            color: selected ? AuthColors.greenLight : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(Icons.shield_outlined, color: AuthColors.cyanLight, size: compact ? 22 : 26),
-        ),
-        const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'CyberSentinel',
-              style: GoogleFonts.inter(
-                color: AuthColors.textPrimary,
-                fontSize: compact ? 18 : 22,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.3,
-              ),
-            ),
-            if (!compact)
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: fg),
+              const SizedBox(width: 8),
               Text(
-                'SOC PLATFORM',
+                label,
                 style: GoogleFonts.inter(
-                  color: AuthColors.cyanLight,
-                  fontSize: 11,
+                  color: fg,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  letterSpacing: 1.4,
                 ),
               ),
-          ],
+            ],
+          ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -338,23 +287,19 @@ class _AuthFormCard extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           width: double.infinity,
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AuthColors.panel.withValues(alpha: 0.94),
-                AuthColors.cardDeep.withValues(alpha: 0.92),
-              ],
-            ),
+            color: AuthColors.panel.withValues(alpha: 0.92),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AuthColors.cyan.withValues(alpha: 0.16)),
+            border: Border.all(color: AuthColors.borderElevated.withValues(alpha: 0.9)),
             boxShadow: [
-              BoxShadow(color: AuthColors.cyan.withValues(alpha: 0.06), blurRadius: 32, offset: const Offset(0, 16)),
-              BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 20, offset: const Offset(0, 10)),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 24,
+                offset: const Offset(0, 14),
+              ),
             ],
           ),
           padding: const EdgeInsets.fromLTRB(28, 20, 28, 28),
@@ -365,34 +310,6 @@ class _AuthFormCard extends StatelessWidget {
                 AuthBackButton(label: backLabel),
                 const SizedBox(height: 8),
               ],
-              if (stepLabel != null) ...[
-                Text(
-                  stepLabel!.toUpperCase(),
-                  style: GoogleFonts.inter(
-                    color: AuthColors.cyanLight,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 8),
-              ],
-              Text(
-                title,
-                style: GoogleFonts.inter(
-                  color: AuthColors.textPrimary,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.4,
-                  height: 1.2,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                subtitle,
-                style: GoogleFonts.inter(color: AuthColors.textMuted, fontSize: 14, height: 1.5),
-              ),
-              const SizedBox(height: 24),
               child,
             ],
           ),
@@ -439,7 +356,7 @@ class AuthTrustFooter extends StatelessWidget {
         Icon(Icons.lock_outline, size: 14, color: AuthColors.textDim.withValues(alpha: 0.9)),
         const SizedBox(width: 6),
         Text(
-          'Encrypted connection · JWT session · Role-based access',
+          'Encrypted connection · Session-based access',
           style: GoogleFonts.inter(color: AuthColors.textDim, fontSize: 11),
         ),
       ],
@@ -518,17 +435,57 @@ class AuthFormSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          label.toUpperCase(),
-          style: GoogleFonts.inter(
-            color: AuthColors.textDim,
-            fontSize: 11,
+          label,
+          style: GoogleFonts.jetBrainsMono(
+            color: AuthColors.textMuted,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
-            letterSpacing: 1.1,
+            letterSpacing: 1.2,
           ),
         ),
         const SizedBox(height: 12),
         child,
       ],
+    );
+  }
+}
+
+class AuthAuthButton extends StatelessWidget {
+  const AuthAuthButton({
+    super.key,
+    required this.label,
+    required this.loading,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool loading;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton(
+        onPressed: loading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AuthColors.greenLight,
+          foregroundColor: Colors.black,
+          disabledBackgroundColor: AuthColors.borderElevated,
+          disabledForegroundColor: AuthColors.textDim,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 0,
+          textStyle: GoogleFonts.jetBrainsMono(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.8),
+        ),
+        child: loading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+              )
+            : Text(label.toUpperCase()),
+      ),
     );
   }
 }
@@ -677,27 +634,12 @@ class _AuthTextFieldState extends State<AuthTextField> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text(
-                widget.label,
-                style: GoogleFonts.inter(
-                  color: AuthColors.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              if (widget.required)
-                Text(' *', style: GoogleFonts.inter(color: AuthColors.cyanLight, fontSize: 13)),
-            ],
-          ),
-          const SizedBox(height: 8),
           AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
               boxShadow: _focused && !hasError
-                  ? [BoxShadow(color: AuthColors.cyan.withValues(alpha: 0.12), blurRadius: 14)]
+                  ? [BoxShadow(color: Colors.black.withValues(alpha: 0.22), blurRadius: 14)]
                   : [],
             ),
             child: Focus(
@@ -712,16 +654,16 @@ class _AuthTextFieldState extends State<AuthTextField> {
                 autofillHints: widget.autofillHints,
                 onSubmitted: widget.onSubmitted,
                 onChanged: widget.onChanged,
-                style: GoogleFonts.inter(color: AuthColors.textPrimary, fontSize: 15),
+                style: GoogleFonts.jetBrainsMono(color: AuthColors.textPrimary, fontSize: 15),
                 cursorColor: AuthColors.cyanLight,
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: AuthColors.inputBg,
                   hintText: widget.hint,
-                  hintStyle: GoogleFonts.inter(color: AuthColors.textDim, fontSize: 14),
+                  hintStyle: GoogleFonts.jetBrainsMono(color: AuthColors.textDim, fontSize: 14),
                   errorText: null,
                   prefixIcon: widget.prefixIcon != null
-                      ? Icon(widget.prefixIcon, color: hasError ? AuthColors.redLight : AuthColors.cyanLight, size: 20)
+                      ? Icon(widget.prefixIcon, color: hasError ? AuthColors.redLight : AuthColors.textDim, size: 20)
                       : null,
                   suffixIcon: widget.obscureText
                       ? IconButton(

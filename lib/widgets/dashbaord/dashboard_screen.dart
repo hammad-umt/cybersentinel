@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:cybersentinel/services/api_config.dart';
 import 'package:cybersentinel/services/api_service.dart';
+import 'package:cybersentinel/services/navigation_intent_service.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
 import 'package:cybersentinel/widgets/shared/animated_widgets.dart';
 import 'package:cybersentinel/widgets/shared/cyber_card.dart';
@@ -37,7 +38,7 @@ class _DashboardContentState extends State<DashboardContent> {
   void initState() {
     super.initState();
     _loadData();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!_loading && mounted) _loadData(silent: true);
     });
   }
@@ -65,13 +66,13 @@ class _DashboardContentState extends State<DashboardContent> {
     }
 
     try {
-      final summary = await ApiService.instance.getDashboardSummary();
-      final threats = await ApiService.instance.getTopThreats(limit: 7);
+      final results = await Future.wait([
+        ApiService.instance.getDashboardSummary(),
+        ApiService.instance.getTopThreats(limit: 7),
+      ]);
+      final summary = results[0];
+      final threats = results[1];
       if (!mounted) return;
-
-      final packets = (summary['packet_events'] as num?)?.toDouble() ?? 2400000;
-      final avgThreat = (summary['avg_packet_threat_score'] as num?)?.toDouble() ?? 0;
-      final critical = (summary['critical_alerts'] as num?)?.toDouble() ?? 0;
 
       setState(() {
         _summary = summary;
@@ -579,7 +580,74 @@ class _TrafficChart extends StatelessWidget {
                   ],
                   lineTouchData: LineTouchData(
                     touchTooltipData: LineTouchTooltipData(
-                      getTooltipColor: (_) => AppColors.card,
+                      getTooltipColor: (_) => const Color(0xFF0D1320),
+                      tooltipPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      maxContentWidth: 220,
+                      getTooltipItems: (touchedSpots) {
+                        if (touchedSpots.isEmpty) return const [];
+                        final idx = touchedSpots.first.x.toInt();
+                        final safeIdx = idx.clamp(0, data.length - 1);
+                        final point = data[safeIdx];
+
+                        final t = DateTime.now().subtract(Duration(minutes: (data.length - safeIdx) * 5));
+                        final h = t.hour > 12 ? t.hour - 12 : (t.hour == 0 ? 12 : t.hour);
+                        final ampm = t.hour >= 12 ? 'PM' : 'AM';
+                        final time = '$h:${t.minute.toString().padLeft(2, '0')} $ampm';
+
+                        final normal = point.normal.round();
+                        final suspicious = point.suspicious.round();
+                        final malicious = point.malicious.round();
+
+                        final content = LineTooltipItem(
+                          '$time\n',
+                          const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            height: 1.2,
+                          ),
+                          children: [
+                            TextSpan(
+                              text: '\nnormal : $normal',
+                              style: TextStyle(
+                                color: AppColors.chartNormal,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                                height: 1.4,
+                              ),
+                            ),
+                            TextSpan(
+                              text: '\nsuspicious : $suspicious',
+                              style: TextStyle(
+                                color: AppColors.chartSuspicious,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                                height: 1.4,
+                              ),
+                            ),
+                            TextSpan(
+                              text: '\nmalicious : $malicious',
+                              style: TextStyle(
+                                color: AppColors.chartMalicious,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        );
+
+                        // fl_chart expects the tooltipItems list to match touchedSpots length.
+                        return [
+                          for (var i = 0; i < touchedSpots.length; i++)
+                            i == 0
+                                ? content
+                                : const LineTooltipItem(
+                                    '',
+                                    TextStyle(fontSize: 0, color: Colors.transparent),
+                                  ),
+                        ];
+                      },
                     ),
                   ),
                 ),
@@ -672,7 +740,7 @@ class _AlertsPanel extends StatelessWidget {
                 ? Center(child: Text('No recent alerts', style: TextStyle(color: AppColors.textDim)))
                 : ListView.separated(
                     itemCount: alerts.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    separatorBuilder: (_, index) => const SizedBox(height: 12),
                     itemBuilder: (context, i) {
                       final item = alerts[i];
                       final severity = item['severity']?.toString() ?? 'medium';
@@ -901,7 +969,7 @@ class _MaliciousIPsTable extends StatelessWidget {
                 ],
               ),
               TextButton.icon(
-                onPressed: () {},
+                onPressed: () => NavigationIntentService.instance.openPage(2),
                 style: TextButton.styleFrom(
                   padding: EdgeInsets.zero,
                   minimumSize: Size.zero,
@@ -959,17 +1027,23 @@ class _MaliciousIPsTable extends StatelessWidget {
                 ? Center(child: Text('No threat data yet', style: TextStyle(color: AppColors.textDim)))
                 : ListView.separated(
                     itemCount: threats.length,
-                    separatorBuilder: (_, __) => Divider(color: AppColors.border, height: 1),
+                    separatorBuilder: (_, index) => Divider(color: AppColors.border, height: 1),
                     itemBuilder: (context, i) {
                       final row = threats[i];
                       final severity = row['severity']?.toString() ?? 'medium';
                       final color = severityColor(severity);
+                      final evidence = row['evidence'];
                       final attempts = (row['attempts'] as num?)?.toInt() ??
+                          (evidence is Map ? evidence['attempts'] as num? : null)?.toInt() ??
                           (row['final_score'] as num?)?.toInt() ??
                           0;
+                      final country = row['country']?.toString() ??
+                          (evidence is Map ? evidence['country']?.toString() : null) ??
+                          row['classification']?.toString() ??
+                          '-';
                       return _TableRow(
                         ip: row['ip']?.toString() ?? '-',
-                        country: row['country']?.toString() ?? row['classification']?.toString() ?? '-',
+                        country: country,
                         attempts: attempts,
                         severity: severity,
                         color: color,

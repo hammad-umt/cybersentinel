@@ -110,13 +110,24 @@ class ApiService {
 
   // --- Dashboard ---
 
-  Future<Map<String, dynamic>> getDashboardSummary() =>
-      _get('/api/v1/dashboard/summary');
+  Future<Map<String, dynamic>> getDashboardSummary() async {
+    final response = await http
+        .get(_uri('/api/v1/dashboard/summary'), headers: _headers)
+        .timeout(const Duration(seconds: 15));
+    return _parseJson(response);
+  }
 
   // --- Threat ---
 
-  Future<Map<String, dynamic>> getTopThreats({int limit = 10}) =>
-      _get('/api/v1/threat/top', query: {'limit': '$limit'});
+  Future<Map<String, dynamic>> getTopThreats({int limit = 10}) async {
+    final response = await http
+        .get(
+          _uri('/api/v1/threat/top', {'limit': '$limit'}),
+          headers: _headers,
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parseJson(response);
+  }
 
   Future<Map<String, dynamic>> getThreatScore(String ip) =>
       _get('/api/v1/threat/score/$ip');
@@ -248,17 +259,24 @@ class ApiService {
       filename: file.name,
     ));
 
-    final streamed = await request.send();
+    final streamed = await request.send().timeout(const Duration(seconds: 60));
     final response = await http.Response.fromStream(streamed);
     return _parseJson(response);
   }
 
-  Future<Map<String, dynamic>> scanUrl(String url) {
+  Future<Map<String, dynamic>> scanUrl(String url) async {
     final trimmed = url.trim();
     if (trimmed.isEmpty) {
       throw Exception('URL is required');
     }
-    return _post('/api/v1/intel/url', body: {'url': trimmed});
+    final response = await http
+        .post(
+          _uri('/api/v1/intel/url'),
+          headers: _headers,
+          body: jsonEncode({'url': trimmed}),
+        )
+        .timeout(const Duration(seconds: 45));
+    return _parseJson(response);
   }
 
   // --- Copilot ---

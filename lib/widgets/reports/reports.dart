@@ -240,7 +240,7 @@ class _ReportsContentState extends State<ReportsContent> {
                               color: AppColors.textPrimary,
                             ),
                           )
-                        : Icon(Icons.auto_awesome_motion_outlined, size: 16),
+                        : Icon(Icons.description_outlined, size: 16),
                     label: Text(
                       _generating ? 'Generating...' : 'Generate Report',
                       style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),

@@ -1,5 +1,6 @@
 import 'package:cybersentinel/auth/require_auth.dart';
 import 'package:cybersentinel/services/api_config.dart';
+import 'package:cybersentinel/services/firewall_monitor_service.dart';
 import 'package:cybersentinel/services/api_service.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
 import 'package:cybersentinel/utils/file_export.dart';
@@ -61,7 +62,7 @@ class FirewallLogsScreen extends StatefulWidget {
 
 class _FirewallLogsScreenState extends State<FirewallLogsScreen> {
   final ScrollController _scrollController = ScrollController();
-  bool _autoFetchLogs = false;
+  final _monitor = FirewallMonitorService.instance;
   List<Map<String, dynamic>> _alerts = [];
   bool _loading = true;
   String? _error;
@@ -70,13 +71,19 @@ class _FirewallLogsScreenState extends State<FirewallLogsScreen> {
   @override
   void initState() {
     super.initState();
+    _monitor.addListener(_onMonitorUpdate);
     _loadAlerts();
   }
 
   @override
   void dispose() {
+    _monitor.removeListener(_onMonitorUpdate);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onMonitorUpdate() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadAlerts() async {
@@ -161,9 +168,9 @@ class _FirewallLogsScreenState extends State<FirewallLogsScreen> {
   Future<void> _toggleMonitor(bool enabled) async {
     try {
       if (enabled) {
-        await ApiService.instance.startFirewallMonitor();
+        await _monitor.startMonitor();
       } else {
-        await ApiService.instance.stopFirewallMonitor();
+        await _monitor.stopMonitor();
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -176,7 +183,6 @@ class _FirewallLogsScreenState extends State<FirewallLogsScreen> {
           SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
         );
       }
-      setState(() => _autoFetchLogs = !enabled);
     }
   }
 
@@ -269,11 +275,9 @@ class _FirewallLogsScreenState extends State<FirewallLogsScreen> {
           ),
           const Spacer(),
           Checkbox(
-            value: _autoFetchLogs,
+            value: _monitor.isMonitoring,
             onChanged: (value) {
-              final enabled = value ?? false;
-              setState(() => _autoFetchLogs = enabled);
-              _toggleMonitor(enabled);
+              _toggleMonitor(value ?? false);
             },
             activeColor: AppColors.cyan,
             checkColor: Colors.white,
@@ -282,7 +286,7 @@ class _FirewallLogsScreenState extends State<FirewallLogsScreen> {
           ),
           const SizedBox(width: 4),
           Text(
-            'Auto-fetch logs',
+            'Live monitor',
             style: GoogleFonts.inter(
               color: AppColors.textMuted,
               fontSize: 13,

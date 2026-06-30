@@ -1,3 +1,4 @@
+import 'package:cybersentinel/services/navigation_intent_service.dart';
 import 'package:cybersentinel/services/api_config.dart';
 import 'package:cybersentinel/services/api_service.dart';
 import 'package:cybersentinel/services/ip_intel_parser.dart';
@@ -24,9 +25,26 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    NavigationIntentService.instance.addListener(_onNavigationIntent);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _applyPendingIp());
+  }
+
+  @override
   void dispose() {
+    NavigationIntentService.instance.removeListener(_onNavigationIntent);
     _ipController.dispose();
     super.dispose();
+  }
+
+  void _onNavigationIntent() => _applyPendingIp();
+
+  void _applyPendingIp() {
+    final ip = NavigationIntentService.instance.consumeIpLookup();
+    if (ip == null || ip.isEmpty) return;
+    _ipController.text = ip;
+    _analyze();
   }
 
   Future<void> _analyze() async {

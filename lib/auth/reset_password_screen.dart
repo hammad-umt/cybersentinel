@@ -2,11 +2,12 @@ import 'package:cybersentinel/auth/auth_navigator.dart';
 import 'package:cybersentinel/auth/auth_validators.dart';
 import 'package:cybersentinel/auth/auth_widgets.dart';
 import 'package:cybersentinel/services/auth_service.dart';
+import 'package:cybersentinel/services/reset_link_handler.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
-  const ResetPasswordScreen({super.key, required this.token});
+  const ResetPasswordScreen({super.key, this.token = ''});
 
   final String token;
 
@@ -29,15 +30,25 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   String? _confirmError;
   String? _validationError;
   String? _formError;
+  late String _activeToken;
+  final _tokenController = TextEditingController();
+  final _tokenFocus = FocusNode();
 
   @override
   void initState() {
     super.initState();
-    _validateToken();
+    _activeToken = widget.token.trim();
+    if (_activeToken.isNotEmpty) {
+      _validateToken();
+    } else {
+      _validating = false;
+    }
   }
 
   @override
   void dispose() {
+    _tokenController.dispose();
+    _tokenFocus.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
     _passwordFocus.dispose();
@@ -46,8 +57,13 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   }
 
   Future<void> _validateToken() async {
+    if (_activeToken.isEmpty) return;
+    setState(() {
+      _validating = true;
+      _validationError = null;
+    });
     try {
-      await AuthService.instance.validateResetToken(widget.token);
+      await AuthService.instance.validateResetToken(_activeToken);
       if (mounted) {
         setState(() {
           _tokenValid = true;
@@ -89,7 +105,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     setState(() => _loading = true);
     try {
       await AuthService.instance.resetPassword(
-        token: widget.token,
+        token: _activeToken,
         newPassword: _passwordController.text,
       );
       if (!mounted) return;
@@ -113,7 +129,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           ? 'Complete'
           : _validating
               ? 'Verifying link'
-              : 'Password recovery · Step 2 of 2',
+              : null,
       title: _done
           ? 'Password updated'
           : _validating
@@ -126,15 +142,47 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           : _validating
               ? 'Please wait while we confirm your reset link is still valid.'
               : _tokenValid
-                  ? 'Create a strong password you haven\'t used on CyberSentinel before.'
+                  ? 'Create a strong password you can remember.'
                   : 'This reset link is invalid or has already been used.',
       heroIcon: Icons.key_rounded,
-      heroTagline: 'Secure account recovery for CyberSentinel operators',
+      heroTagline: 'Recover access to your account',
       child: _buildBody(),
     );
   }
 
   Widget _buildBody() {
+    if (_activeToken.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const AuthStatusBanner(
+            title: 'Open from email or paste token',
+            icon: Icons.mail_outline_rounded,
+            message:
+                'Click the reset link in your email to open CyberSentinel automatically. '
+                'If that does not work, copy the reset link or token from the email and paste it below.',
+            color: AppColors.cyan,
+          ),
+          const SizedBox(height: 20),
+          AuthTextField(
+            controller: _tokenController,
+            focusNode: _tokenFocus,
+            label: 'Reset link or token',
+            hint: 'Paste from email',
+            prefixIcon: Icons.link_rounded,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _applyPastedToken(),
+          ),
+          const SizedBox(height: 16),
+          AuthCtaBlock(
+            primaryLabel: 'Continue',
+            primaryIcon: Icons.arrow_forward_rounded,
+            onPrimary: _applyPastedToken,
+          ),
+        ],
+      );
+    }
+
     if (_validating) {
       return const AuthLoadingState(message: 'Validating secure reset token…');
     }
@@ -249,5 +297,23 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         ),
       ],
     );
+  }
+
+  void _applyPastedToken() {
+    final parsed = ResetLinkHandler.tokenFromString(_tokenController.text);
+    if (parsed == null || parsed.isEmpty) {
+      setState(() {
+        _validationError = 'Paste the full reset link or token from your email.';
+        _tokenValid = false;
+      });
+      return;
+    }
+    setState(() {
+      _activeToken = parsed;
+      _validating = true;
+      _tokenValid = false;
+      _validationError = null;
+    });
+    _validateToken();
   }
 }

@@ -1,3 +1,4 @@
+import 'package:cybersentinel/services/navigation_intent_service.dart';
 import 'package:cybersentinel/auth/require_auth.dart';
 import 'package:cybersentinel/services/api_config.dart';
 import 'package:cybersentinel/services/api_service.dart';
@@ -55,9 +56,31 @@ class _VirusScannerContentState extends State<VirusScannerContent> {
   final _urlController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    NavigationIntentService.instance.addListener(_onNavigationIntent);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _applyPendingUrl());
+  }
+
+  @override
   void dispose() {
+    NavigationIntentService.instance.removeListener(_onNavigationIntent);
     _urlController.dispose();
     super.dispose();
+  }
+
+  void _onNavigationIntent() => _applyPendingUrl();
+
+  void _applyPendingUrl() {
+    final url = NavigationIntentService.instance.consumeUrlScan();
+    if (url == null || url.isEmpty) return;
+    setState(() {
+      _urlController.text = url;
+      selectedFile = null;
+      selectedFileName = null;
+      _result = null;
+    });
+    _scan();
   }
 
   Future<void> _pickFile() async {
