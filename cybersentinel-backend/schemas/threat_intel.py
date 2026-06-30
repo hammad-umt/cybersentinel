@@ -10,7 +10,16 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _normalize_scan_url(raw: str) -> str:
+    value = raw.strip()
+    if not value:
+        return ""
+    if not value.startswith(("http://", "https://")):
+        value = f"https://{value}"
+    return value
 
 
 class IPIntelResult(BaseModel):
@@ -60,7 +69,17 @@ class VTResult(BaseModel):
 class URLScanRequest(BaseModel):
     """Request body for POST /api/v1/intel/url."""
 
-    url: str = Field(min_length=1, max_length=256)
+    url: str = Field(min_length=1, max_length=2048)
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def normalize_url(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise TypeError("url must be a string")
+        normalized = _normalize_scan_url(value)
+        if not normalized:
+            raise ValueError("URL is required")
+        return normalized
 
 
 class EnrichedThreatContext(BaseModel):

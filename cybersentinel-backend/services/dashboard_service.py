@@ -1,20 +1,17 @@
 """
-SOC dashboard aggregation service — parallel Supabase queries.
+SOC dashboard aggregation service.
 """
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
-from typing import Any, TypeVar
+from typing import Any
 
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.severity import translate_firewall_severity
-from db.database import AsyncSessionLocal
 from db.models import FirewallAlert, IPReputationCache, PacketEvent, ResponseAction
 from db.sql_compat import iso_day_bucket
 from schemas.dashboard import (
@@ -26,18 +23,6 @@ from schemas.dashboard import (
     TrendPoint,
 )
 
-T = TypeVar("T")
-
-
-async def _run_parallel(user_id: str, *tasks: Callable[[AsyncSession, str], Awaitable[Any]]) -> tuple:
-    """Run read queries on independent Supabase sessions in parallel."""
-
-    async def _one(task: Callable[[AsyncSession, str], Awaitable[Any]]) -> Any:
-        async with AsyncSessionLocal() as session:
-            return await task(session, user_id)
-
-    return await asyncio.gather(*[_one(task) for task in tasks])
-
 
 class DashboardService:
     def __init__(self, db: AsyncSession, user_id: str):
@@ -47,11 +32,13 @@ class DashboardService:
     async def summary(self) -> DashboardSummary:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=settings.DASHBOARD_TREND_DAYS)).isoformat()
         day_bucket = iso_day_bucket(FirewallAlert.timestamp)
+        db = self.db
+        uid = self.user_id
 
-        async def count_model(session: AsyncSession, uid: str, model: type) -> int:
+        async def count_model(model: type) -> int:
             return int(
                 (
-                    await session.execute(
+                    await db.execute(
                         select(func.count())
                         .select_from(model)
                         .where(model.user_id == uid)
@@ -59,89 +46,71 @@ class DashboardService:
                 ).scalar_one()
             )
 
-        async def scalar_count(session: AsyncSession, uid: str, stmt) -> int:
-            return int((await session.execute(stmt)).scalar_one())
-
-        async def scalar(session: AsyncSession, uid: str, stmt):
-            return (await session.execute(stmt)).scalar_one()
-
-        (
-            packet_events,
-            firewall_alerts,
-            response_actions,
-            unacknowledged_alerts,
-            critical_alerts,
-            avg_packet,
-            max_firewall,
-            severity_rows,
-            protocol_rows,
-            recent_rows,
-            trend_rows,
-            geo_rows,
-        ) = await _run_parallel(
-            self.user_id,
-            lambda s, u: count_model(s, u, PacketEvent),
-            lambda s, u: count_model(s, u, FirewallAlert),
-            lambda s, u: count_model(s, u, ResponseAction),
-            lambda s, u: scalar_count(
-                s,
-                u,
-                select(func.count())
-                .select_from(FirewallAlert)
-                .where(FirewallAlert.user_id == u, FirewallAlert.acknowledged == False),  # noqa: E712
-            ),
-            lambda s, u: scalar_count(
-                s,
-                u,
-                select(func.count())
-                .select_from(FirewallAlert)
-                .where(FirewallAlert.user_id == u, FirewallAlert.severity == "Critical"),
-            ),
-            lambda s, u: scalar(
-                s,
-                u,
-                select(func.avg(PacketEvent.threat_score_contribution)).where(PacketEvent.user_id == u),
-            ),
-            lambda s, u: scalar(
-                s,
-                u,
-                select(func.max(FirewallAlert.threat_score)).where(FirewallAlert.user_id == u),
-            ),
-            lambda s, u: s.execute(
-                select(FirewallAlert.severity, func.count())
-                .where(FirewallAlert.user_id == u)
-                .group_by(FirewallAlert.severity)
-                .order_by(desc(func.count()))
-            ),
-            lambda s, u: s.execute(
-                select(PacketEvent.protocol, func.count())
-                .where(PacketEvent.user_id == u, PacketEvent.protocol.is_not(None))
-                .group_by(PacketEvent.protocol)
-                .order_by(desc(func.count()))
-                .limit(10)
-            ),
-            lambda s, u: s.execute(
-                select(FirewallAlert)
-                .where(FirewallAlert.user_id == u)
-                .order_by(FirewallAlert.timestamp.desc())
-                .limit(10)
-            ),
-            lambda s, u: s.execute(
-                select(day_bucket, func.count(), func.avg(FirewallAlert.threat_score))
-                .where(FirewallAlert.user_id == u, FirewallAlert.timestamp >= cutoff)
-                .group_by(day_bucket)
-                .order_by(day_bucket)
-            ),
-            lambda s, u: s.execute(
-                select(IPReputationCache.country_code, func.count())
-                .where(
-                    IPReputationCache.user_id == u,
-                    IPReputationCache.country_code.is_not(None),
+        packet_events = await count_model(PacketEvent)
+        firewall_alerts = await count_model(FirewallAlert)
+        response_actions = await count_model(ResponseAction)
+        unacknowledged_alerts = int(
+            (
+                await db.execute(
+                    select(func.count())
+                    .select_from(FirewallAlert)
+                    .where(FirewallAlert.user_id == uid, FirewallAlert.acknowledged == False)  # noqa: E712
                 )
-                .group_by(IPReputationCache.country_code)
-                .order_by(desc(func.count()))
-                .limit(20)
-            ),
+            ).scalar_one()
+        )
+        critical_alerts = int(
+            (
+                await db.execute(
+                    select(func.count())
+                    .select_from(FirewallAlert)
+                    .where(FirewallAlert.user_id == uid, FirewallAlert.severity == "Critical")
+                )
+            ).scalar_one()
+        )
+        avg_packet = (
+            await db.execute(
+                select(func.avg(PacketEvent.threat_score_contribution)).where(PacketEvent.user_id == uid)
+            )
+        ).scalar_one()
+        max_firewall = (
+            await db.execute(
+                select(func.max(FirewallAlert.threat_score)).where(FirewallAlert.user_id == uid)
+            )
+        ).scalar_one()
+        severity_rows = await db.execute(
+            select(FirewallAlert.severity, func.count())
+            .where(FirewallAlert.user_id == uid)
+            .group_by(FirewallAlert.severity)
+            .order_by(desc(func.count()))
+        )
+        protocol_rows = await db.execute(
+            select(PacketEvent.protocol, func.count())
+            .where(PacketEvent.user_id == uid, PacketEvent.protocol.is_not(None))
+            .group_by(PacketEvent.protocol)
+            .order_by(desc(func.count()))
+            .limit(10)
+        )
+        recent_rows = await db.execute(
+            select(FirewallAlert)
+            .where(FirewallAlert.user_id == uid)
+            .order_by(FirewallAlert.timestamp.desc())
+            .limit(10)
+        )
+        trend_rows = await db.execute(
+            select(day_bucket, func.count(), func.avg(FirewallAlert.threat_score))
+            .where(FirewallAlert.user_id == uid, FirewallAlert.timestamp >= cutoff)
+            .group_by(day_bucket)
+            .order_by(day_bucket)
+        )
+        geo_rows = await db.execute(
+            select(IPReputationCache.country_code, func.count())
+            .where(
+                IPReputationCache.user_id == uid,
+                IPReputationCache.country_code.is_not(None),
+            )
+            .group_by(IPReputationCache.country_code)
+            .order_by(desc(func.count()))
+            .limit(20)
         )
 
         severity_counts: dict[str, int] = {}

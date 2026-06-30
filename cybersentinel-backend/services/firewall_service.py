@@ -14,6 +14,7 @@ Responsibilities:
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from typing import Any, Dict, List
 
@@ -74,8 +75,8 @@ class FirewallService:
         """
         pipeline = self.registry.require_firewall_pipeline(clustering_algorithm)
 
-        # Detect log source from filename if auto
-        detected_source = _detect_source(filename, source)
+        # Detect log source from content/filename when auto
+        detected_source = _detect_log_source(filename, source, file_bytes)
         logger.info(
             "Analyzing firewall log: filename={} source={} size={} bytes",
             filename, detected_source, len(file_bytes),
@@ -317,6 +318,32 @@ def _alert_to_public(row: FirewallAlert) -> FirewallAlertOut:
     return alert.model_copy(update={"severity": translate_firewall_severity(alert.severity)})
 
 
+_WINDOWS_DATA_LINE_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+"
+    r"(ALLOW|DROP|DENY|BLOCK|REJECT|OPEN|CLOSE|INFO-EVENTS)\s+"
+    r"(TCP|UDP|ICMP|ICMPV6)\s+",
+    re.IGNORECASE,
+)
+
+
+def _detect_log_source(filename: str, hint: str, file_bytes: bytes) -> str:
+    """Detect Windows vs Linux firewall log format from content and filename."""
+    if hint != "auto":
+        return hint
+
+    for line in file_bytes.decode("utf-8", errors="replace").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if _WINDOWS_DATA_LINE_RE.match(stripped):
+            return "windows"
+        if "SRC=" in stripped and "DST=" in stripped and "PROTO=" in stripped:
+            return "iptables"
+        break
+
+    return _detect_source(filename, hint)
+
+
 def _detect_source(filename: str, hint: str) -> str:
     """Detect log format from filename if hint is 'auto'."""
     if hint != "auto":
@@ -353,11 +380,20 @@ def _parse_log_bytes(file_bytes: bytes, filename: str, source: str) -> pd.DataFr
         tmp_path = tmp.name
 
     try:
-        df = read_firewall_log(tmp_path, source=source)
+        try:
+            df = read_firewall_log(tmp_path, source=source)
+        except ValueError as exc:
+            if "iptables/UFW" in str(exc) and source != "windows":
+                logger.info(
+                    "iptables parse produced no rows for {}; retrying as Windows pfirewall",
+                    filename,
+                )
+                df = read_firewall_log(tmp_path, source="windows")
+            else:
+                raise
+        return df
     finally:
         os.unlink(tmp_path)
-
-    return df
 
 
 def _parse_validation(raw: dict) -> ValidationReport:

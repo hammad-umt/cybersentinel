@@ -166,17 +166,18 @@ async def api_auth_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def production_safety_middleware(request: Request, call_next):
-    client_ip = request.client.host if request.client else "unknown"
-    now = monotonic()
-    bucket = _rate_limit_buckets[client_ip]
-    while bucket and now - bucket[0] > 60:
-        bucket.popleft()
-    if len(bucket) >= settings.RATE_LIMIT_PER_MINUTE:
-        return JSONResponse(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            content={"success": False, "detail": "Too many requests. Please retry shortly."},
-        )
-    bucket.append(now)
+    if settings.RATE_LIMIT_PER_MINUTE > 0:
+        client_ip = request.client.host if request.client else "unknown"
+        now = monotonic()
+        bucket = _rate_limit_buckets[client_ip]
+        while bucket and now - bucket[0] > 60:
+            bucket.popleft()
+        if len(bucket) >= settings.RATE_LIMIT_PER_MINUTE:
+            return JSONResponse(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                content={"success": False, "detail": "Too many requests. Please retry shortly."},
+            )
+        bucket.append(now)
 
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"

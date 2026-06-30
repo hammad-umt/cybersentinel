@@ -19,21 +19,24 @@ from typing import Any, Dict, Literal
 import httpx
 from loguru import logger
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from db.models import IPReputationCache, VirusScanCache
-from schemas.threat_intel import EnrichedThreatContext, IPIntelResult, VTResult
+from schemas.threat_intel import EnrichedThreatContext, IPIntelResult, VTResult, _normalize_scan_url
 
 
 CACHE_TTL = timedelta(hours=24)
 HTTP_TIMEOUT_SECONDS = 12.0
-FILE_UPLOAD_TIMEOUT_SECONDS = 45.0
+FILE_UPLOAD_TIMEOUT_SECONDS = 120.0
 MAX_HTTP_ATTEMPTS = 2
 RETRY_BACKOFF_SECONDS = (0.25, 0.75)
 VT_BASE_URL = "https://www.virustotal.com/api/v3"
-URL_POLL_ATTEMPTS = 6
-URL_POLL_INTERVAL_SECONDS = 1.0
+URL_POLL_ATTEMPTS = 15
+URL_POLL_INTERVAL_SECONDS = 2.0
+FILE_POLL_ATTEMPTS = 50
+FILE_POLL_INTERVAL_SECONDS = 3.0
 
 
 class ThreatIntelService:
@@ -156,6 +159,14 @@ class ThreatIntelService:
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
                 headers = {"x-apikey": settings.VIRUSTOTAL_API_KEY}
                 payload = await self._fetch_vt_file_report(client, headers, file_hash, file_bytes)
+        except TimeoutError as exc:
+            logger.warning("VirusTotal file scan still queued for {}: {}", file_hash, exc)
+            return VTResult(
+                lookup_key=file_hash,
+                scan_type="file",
+                provider_status="pending",
+                scanned_at=now,
+            )
         except Exception as exc:
             logger.warning("VirusTotal file scan failed for {}: {}", file_hash, exc)
             return VTResult(
@@ -176,7 +187,9 @@ class ThreatIntelService:
 
     async def check_url(self, url: str) -> VTResult:
         """Submit and poll VirusTotal's URL analysis endpoint."""
-        lookup_key = url.strip()
+        lookup_key = _normalize_scan_url(url)
+        if not lookup_key:
+            raise ValueError("URL is required")
         cached = await self._get_fresh_vt_cache(lookup_key, "url")
         if cached is not None:
             return self._vt_result_from_cache(cached, cached=True, provider_status="ok")
@@ -307,7 +320,62 @@ class ThreatIntelService:
             analysis_id = upload_payload.get("data", {}).get("id")
             if not analysis_id:
                 raise ValueError("VirusTotal file upload did not return an analysis id")
-            return await _poll_vt_analysis(upload_client, analysis_id, headers)
+
+            analysis_payload: Dict[str, Any] | None
+            try:
+                analysis_payload = await _poll_vt_analysis(
+                    upload_client,
+                    analysis_id,
+                    headers,
+                    attempts=FILE_POLL_ATTEMPTS,
+                    interval_seconds=FILE_POLL_INTERVAL_SECONDS,
+                )
+            except TimeoutError:
+                logger.info(
+                    "VirusTotal file analysis {} still queued; checking /files/{}",
+                    analysis_id,
+                    file_hash,
+                )
+                analysis_payload = None
+
+            return await self._resolve_vt_file_payload(
+                upload_client,
+                headers,
+                file_hash,
+                analysis_payload,
+            )
+
+    async def _resolve_vt_file_payload(
+        self,
+        client: httpx.AsyncClient,
+        headers: Dict[str, str],
+        file_hash: str,
+        analysis_payload: Dict[str, Any] | None,
+    ) -> Dict[str, Any]:
+        """Prefer the file report object; fall back to the analysis poll payload."""
+        try:
+            response = await _request_with_retry(
+                client,
+                "GET",
+                f"{VT_BASE_URL}/files/{file_hash}",
+                provider="VirusTotal",
+                headers=headers,
+            )
+            report = response.json()
+            if _extract_vt_stats(report):
+                return report
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404:
+                raise
+        except Exception as exc:
+            logger.debug("VirusTotal file report not ready for {}: {}", file_hash, exc)
+
+        if analysis_payload is not None and _extract_vt_stats(analysis_payload):
+            return analysis_payload
+
+        raise TimeoutError(
+            f"VirusTotal file {file_hash} analysis did not complete in time"
+        )
 
     async def _fetch_vt_url_report(
         self,
@@ -335,13 +403,38 @@ class ThreatIntelService:
             f"{VT_BASE_URL}/urls",
             provider="VirusTotal",
             headers=headers,
-            data={"url": url},
+            files={"url": (None, url)},
         )
         submit_payload = response.json()
         analysis_id = submit_payload.get("data", {}).get("id")
         if not analysis_id:
             raise ValueError("VirusTotal URL submission did not return an analysis id")
-        return await _poll_vt_analysis(client, analysis_id, headers)
+        analysis_payload = await _poll_vt_analysis(client, analysis_id, headers)
+        return await self._resolve_vt_url_payload(client, headers, url, analysis_payload)
+
+    async def _resolve_vt_url_payload(
+        self,
+        client: httpx.AsyncClient,
+        headers: Dict[str, str],
+        url: str,
+        analysis_payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Prefer the URL report object; fall back to the analysis poll payload."""
+        url_id = _vt_url_identifier(url)
+        try:
+            response = await _request_with_retry(
+                client,
+                "GET",
+                f"{VT_BASE_URL}/urls/{url_id}",
+                provider="VirusTotal",
+                headers=headers,
+            )
+            report = response.json()
+            if _extract_vt_stats(report):
+                return report
+        except Exception as exc:
+            logger.debug("VirusTotal URL report not ready for {}: {}", url, exc)
+        return analysis_payload
 
     async def _get_fresh_ip_cache(self, ip: str) -> IPReputationCache | None:
         row = (await self.db.execute(
@@ -359,13 +452,7 @@ class ThreatIntelService:
         lookup_key: str,
         scan_type: Literal["ip", "file", "url"],
     ) -> VirusScanCache | None:
-        row = (await self.db.execute(
-            select(VirusScanCache).where(
-                VirusScanCache.user_id == self.user_id,
-                VirusScanCache.lookup_key == lookup_key,
-                VirusScanCache.scan_type == scan_type,
-            )
-        )).scalar_one_or_none()
+        row = await self._load_vt_cache_row(lookup_key, scan_type)
         if row and _is_fresh(row.scanned_at):
             return row
         return None
@@ -427,7 +514,7 @@ class ThreatIntelService:
         undetected = int(stats.get("undetected", 0) or 0)
         total = malicious + suspicious + harmless + undetected
         score = _vt_score(malicious, suspicious, total)
-        threat_level = _threat_level(score)
+        threat_level = _threat_level(score, malicious, suspicious)
 
         cache = await self._upsert_vt_cache(
             lookup_key=lookup_key,
@@ -459,6 +546,41 @@ class ThreatIntelService:
         raw: Dict[str, Any],
         scanned_at: str,
     ) -> VirusScanCache:
+        for attempt in range(2):
+            row = await self._load_vt_cache_row(lookup_key, scan_type)
+            if row is None:
+                row = VirusScanCache(
+                    user_id=self.user_id,
+                    lookup_key=lookup_key,
+                    scan_type=scan_type,
+                )
+                self.db.add(row)
+
+            row.scan_type = scan_type
+            row.scanned_at = scanned_at
+            row.threat_level = threat_level
+            row.malicious_count = malicious_count
+            row.suspicious_count = suspicious_count
+            row.total_engines = total_engines
+            row.threat_score = threat_score
+            row.raw_result_json = json.dumps(raw)
+
+            try:
+                await self.db.flush()
+                await self.db.refresh(row)
+                return row
+            except IntegrityError:
+                if attempt == 0:
+                    await self.db.rollback()
+                    continue
+                raise
+        raise RuntimeError("virus_scan_cache upsert failed after retry")
+
+    async def _load_vt_cache_row(
+        self,
+        lookup_key: str,
+        scan_type: Literal["ip", "file", "url"],
+    ) -> VirusScanCache | None:
         row = (await self.db.execute(
             select(VirusScanCache).where(
                 VirusScanCache.user_id == self.user_id,
@@ -466,21 +588,15 @@ class ThreatIntelService:
                 VirusScanCache.scan_type == scan_type,
             )
         )).scalar_one_or_none()
-        if row is None:
-            row = VirusScanCache(user_id=self.user_id, lookup_key=lookup_key, scan_type=scan_type)
-            self.db.add(row)
-
-        row.scan_type = scan_type
-        row.scanned_at = scanned_at
-        row.threat_level = threat_level
-        row.malicious_count = malicious_count
-        row.suspicious_count = suspicious_count
-        row.total_engines = total_engines
-        row.threat_score = threat_score
-        row.raw_result_json = json.dumps(raw)
-        await self.db.flush()
-        await self.db.refresh(row)
-        return row
+        if row is not None:
+            return row
+        # Legacy global unique index: row may exist under another user_id.
+        return (await self.db.execute(
+            select(VirusScanCache).where(
+                VirusScanCache.lookup_key == lookup_key,
+                VirusScanCache.scan_type == scan_type,
+            )
+        )).scalar_one_or_none()
 
     def _ip_result_from_cache(self, row: IPReputationCache, cached: bool) -> IPIntelResult:
         raw = _loads(row.raw_result_json)
@@ -513,12 +629,15 @@ class ThreatIntelService:
     ) -> VTResult:
         raw = _loads(row.raw_result_json)
         stats = _extract_vt_stats(raw)
+        malicious = int(row.malicious_count or 0)
+        suspicious = int(row.suspicious_count or 0)
+        score = round(row.threat_score or 0.0, 2)
         return VTResult(
             lookup_key=row.lookup_key,
             scan_type=row.scan_type,  # type: ignore[arg-type]
             ip=row.lookup_key if row.scan_type == "ip" else None,
             provider_status=provider_status,
-            threat_level=row.threat_level,
+            threat_level=_threat_level(score, malicious, suspicious),
             malicious_count=row.malicious_count,
             suspicious_count=row.suspicious_count,
             harmless_count=int(stats.get("harmless", 0) or 0),
@@ -590,8 +709,11 @@ async def _poll_vt_analysis(
     client: httpx.AsyncClient,
     analysis_id: str,
     headers: Dict[str, str],
+    *,
+    attempts: int = URL_POLL_ATTEMPTS,
+    interval_seconds: float = URL_POLL_INTERVAL_SECONDS,
 ) -> Dict[str, Any]:
-    for attempt in range(1, URL_POLL_ATTEMPTS + 1):
+    for attempt in range(1, attempts + 1):
         response = await _request_with_retry(
             client,
             "GET",
@@ -603,8 +725,8 @@ async def _poll_vt_analysis(
         status = payload.get("data", {}).get("attributes", {}).get("status")
         if status == "completed":
             return payload
-        if attempt < URL_POLL_ATTEMPTS:
-            await asyncio.sleep(URL_POLL_INTERVAL_SECONDS)
+        if attempt < attempts:
+            await asyncio.sleep(interval_seconds)
     raise TimeoutError(f"VirusTotal analysis {analysis_id} did not complete in time")
 
 
@@ -656,10 +778,11 @@ def _vt_score(malicious: int, suspicious: int, total: int) -> float:
     return round(max(0.0, min(weighted * 100.0, 100.0)), 2)
 
 
-def _threat_level(score: float) -> str:
-    if score >= 60:
+def _threat_level(score: float, malicious: int = 0, suspicious: int = 0) -> str:
+    """Map VT engine votes + ratio score to clean / suspicious / malicious."""
+    if malicious >= 5 or score >= 50:
         return "malicious"
-    if score >= 25:
+    if malicious >= 1 or suspicious >= 2 or score >= 12:
         return "suspicious"
     return "clean"
 

@@ -24,7 +24,7 @@ from core.security import require_role
 from core.tenant import get_current_user_id
 from db.database import get_db
 from schemas.capture import CapturedPacketsResponse, CaptureStartRequest, CaptureStatusResponse, InterfacesResponse
-from services.packet_capture_service import PacketCaptureService
+from services.packet_capture_service import PacketCaptureService, pick_default_interface_index
 
 router = APIRouter(prefix="/api/v1/capture", tags=["Live Capture"])
 
@@ -58,6 +58,7 @@ async def list_interfaces(service: ServiceDep) -> InterfacesResponse:
         interfaces, scapy_ok, tshark_ok = service.list_interfaces()
         return InterfacesResponse(
             interfaces=interfaces,
+            recommended_index=pick_default_interface_index(interfaces),
             tshark_available=tshark_ok,
             scapy_available=scapy_ok,
         )

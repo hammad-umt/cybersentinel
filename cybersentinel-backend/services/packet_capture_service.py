@@ -160,27 +160,140 @@ def _normalize_bpf_filter(value: Optional[str]) -> Optional[str]:
     return normalized
 
 
+def _is_routable_ipv4(address: str) -> bool:
+    """True for normal LAN/WAN IPv4 addresses (not loopback or link-local)."""
+    if not address or "." not in address:
+        return False
+    if address.startswith(("127.", "169.254.")) or address == "0.0.0.0":
+        return False
+    parts = address.split(".")
+    if len(parts) != 4:
+        return False
+    try:
+        return all(0 <= int(part) <= 255 for part in parts)
+    except ValueError:
+        return False
+
+
+def _filter_routable_ips(ips: List[str]) -> List[str]:
+    seen: set[str] = set()
+    out: List[str] = []
+    for raw in ips:
+        ip = str(raw).strip()
+        if _is_routable_ipv4(ip) and ip not in seen:
+            seen.add(ip)
+            out.append(ip)
+    return out
+
+
+def _psutil_interface_maps() -> tuple[Dict[str, bool], Dict[str, List[str]]]:
+    try:
+        import psutil
+
+        up_map = {name: stat.isup for name, stat in psutil.net_if_stats().items()}
+        ip_map: Dict[str, List[str]] = {}
+        for name, addr_list in psutil.net_if_addrs().items():
+            ip_map[name] = _filter_routable_ips(
+                [a.address for a in addr_list if getattr(a, "address", None)]
+            )
+        return up_map, ip_map
+    except Exception:
+        return {}, {}
+
+
+def _match_psutil_iface(description: str, psutil_names: List[str]) -> str | None:
+    """Match a Scapy/Npcap description to a psutil interface name."""
+    desc = description.lower().replace("–", "-")
+    for pname in psutil_names:
+        pl = pname.lower().replace("–", "-")
+        if pl == desc or pl in desc or desc in pl:
+            return pname
+    wifi_tokens = ("wi-fi", "wifi", "wlan", "wireless")
+    eth_tokens = ("ethernet", "eth ")
+    if any(t in desc for t in wifi_tokens):
+        for pname in psutil_names:
+            pl = pname.lower()
+            if any(t in pl for t in wifi_tokens):
+                return pname
+    if any(t in desc for t in eth_tokens):
+        for pname in psutil_names:
+            pl = pname.lower()
+            if "ethernet" in pl or pl.startswith("eth"):
+                return pname
+    return None
+
+
+def pick_default_interface_index(interfaces: List[NetworkInterface]) -> int | None:
+    """Pick the interface that is actually connected (has routable IP, link up)."""
+    best_index: int | None = None
+    best_score = -10_000
+
+    for iface in interfaces:
+        score = _score_interface_candidate(iface)
+        if score > best_score:
+            best_score = score
+            best_index = iface.index
+
+    return best_index if best_score >= 0 else None
+
+
+def _score_interface_candidate(iface: NetworkInterface) -> int:
+    ips = _filter_routable_ips(iface.ip_addresses)
+    if not ips:
+        return -1000
+    if not iface.is_up:
+        return -900
+
+    label = f"{iface.name} {iface.description}".lower()
+    score = 1000
+
+    if "loopback" in label or iface.name.lower() in {"lo", "loopback"}:
+        return -2000
+    if any(
+        token in label
+        for token in ("virtual", "vmware", "vethernet", "hyper-v", "bluetooth", "npcap loopback")
+    ):
+        score -= 200
+
+    # Small tie-breaker only among connected interfaces.
+    if any(t in label for t in ("ethernet", "eth ")) or label.strip().startswith("eth"):
+        score += 5
+    if any(t in label for t in ("wi-fi", "wifi", "wlan", "wireless")):
+        score += 3
+
+    return score
+
+
 def get_network_interfaces() -> List[NetworkInterface]:
     """
     Return available network interfaces.
     Tries Scapy first, falls back to socket-based discovery.
     """
     interfaces: List[NetworkInterface] = []
+    psutil_up, psutil_ips = _psutil_interface_maps()
 
     if _scapy_available():
         try:
             from scapy.arch.windows import get_windows_if_list
             ifaces = get_windows_if_list()
             for i, iface in enumerate(ifaces):
+                name = iface.get("name", f"iface_{i}")
+                description = iface.get("description", "") or ""
+                ips = _filter_routable_ips(iface.get("ips", []))
+
+                matched = _match_psutil_iface(description, list(psutil_up.keys()))
+                if matched:
+                    ips = list(dict.fromkeys(ips + psutil_ips.get(matched, [])))
+                    is_up = bool(ips) and psutil_up.get(matched, False)
+                else:
+                    is_up = bool(ips)
+
                 interfaces.append(NetworkInterface(
                     index=i,
-                    name=iface.get("name", f"iface_{i}"),
-                    description=iface.get("description", ""),
-                    ip_addresses=[
-                        addr for addr in iface.get("ips", [])
-                        if addr and addr != "0.0.0.0"
-                    ],
-                    is_up=True,
+                    name=name,
+                    description=description,
+                    ip_addresses=ips,
+                    is_up=is_up,
                 ))
             if interfaces:
                 return interfaces
@@ -193,17 +306,17 @@ def get_network_interfaces() -> List[NetworkInterface]:
         addrs = psutil.net_if_addrs()
         stats = psutil.net_if_stats()
         for i, (name, addr_list) in enumerate(addrs.items()):
-            ips = [
-                a.address for a in addr_list
-                if hasattr(a, "address") and "." in a.address
-            ]
-            is_up = stats.get(name, None)
+            ips = _filter_routable_ips(
+                [a.address for a in addr_list if hasattr(a, "address", None)]
+            )
+            stat = stats.get(name)
+            is_up = bool(stat.isup if stat else False) and bool(ips)
             interfaces.append(NetworkInterface(
                 index=i,
                 name=name,
                 description=name,
                 ip_addresses=ips,
-                is_up=is_up.isup if is_up else True,
+                is_up=is_up,
             ))
         return interfaces
     except ImportError:
@@ -861,16 +974,37 @@ class PacketCaptureService:
                 message="Capture already running. Stop it first.",
             )
 
-        # Resolve interface name
+        # Resolve interface — prefer a connected adapter (routable IP, link up).
         interfaces = get_network_interfaces()
-        if req.interface_index >= len(interfaces):
+        recommended = pick_default_interface_index(interfaces)
+        idx = req.interface_index
+        if recommended is not None:
+            if idx >= len(interfaces) or not _filter_routable_ips(interfaces[idx].ip_addresses):
+                idx = recommended
+        elif idx >= len(interfaces):
+            return CaptureStatusResponse(
+                success=False,
+                is_running=False,
+                message="No connected network interface found for packet capture.",
+            )
+
+        if idx >= len(interfaces):
             return CaptureStatusResponse(
                 success=False,
                 is_running=False,
                 message=f"Interface index {req.interface_index} not found. "
                         f"Available: 0–{len(interfaces)-1}",
             )
-        iface = interfaces[req.interface_index]
+        iface = interfaces[idx]
+        if not _filter_routable_ips(iface.ip_addresses):
+            return CaptureStatusResponse(
+                success=False,
+                is_running=False,
+                message=(
+                    f"Interface '{iface.description or iface.name}' has no active IPv4 address. "
+                    "Connect to Wi‑Fi or Ethernet and try again."
+                ),
+            )
 
         bpf_filter = _normalize_bpf_filter(req.bpf_filter)
 

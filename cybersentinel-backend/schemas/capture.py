@@ -38,6 +38,10 @@ class NetworkInterface(BaseModel):
 class InterfacesResponse(BaseModel):
     success: bool = True
     interfaces: List[NetworkInterface]
+    recommended_index: Optional[int] = Field(
+        default=None,
+        description="Best interface index for live capture (connected link with routable IP)",
+    )
     tshark_available: bool = False
     scapy_available: bool = False
 
@@ -59,8 +63,13 @@ class CaptureStartRequest(BaseModel):
     }
     """
     interface_index: int = Field(default=0, description="Index from /interfaces list")
-    packet_limit: int = Field(default=100, ge=1, le=10000, description="Max packets to capture")
-    timeout_seconds: int = Field(default=30, ge=5, le=300, description="Auto-stop after N seconds")
+    packet_limit: int = Field(default=10000, ge=1, le=10000, description="Max packets to capture")
+    timeout_seconds: int = Field(
+        default=86400,
+        ge=5,
+        le=86400,
+        description="Auto-stop after N seconds (86400 = until user stops)",
+    )
     bpf_filter: Optional[str] = Field(
         default=None,
         description="Optional BPF filter e.g. 'tcp port 80'"

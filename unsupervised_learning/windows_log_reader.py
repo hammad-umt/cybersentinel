@@ -21,6 +21,13 @@ _SYSLOG_PREFIX_RE = re.compile(
     r"(?P<time>\d{2}:\d{2}:\d{2})\s+"
 )
 
+_WINDOWS_DATA_LINE_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+"
+    r"(ALLOW|DROP|DENY|BLOCK|REJECT|OPEN|CLOSE|INFO-EVENTS)\s+"
+    r"(TCP|UDP|ICMP|ICMPV6)\s+",
+    re.IGNORECASE,
+)
+
 
 def read_firewall_log(path: str | Path, source: str = "auto") -> pd.DataFrame:
     """
@@ -34,9 +41,17 @@ def read_firewall_log(path: str | Path, source: str = "auto") -> pd.DataFrame:
     if source not in {"auto", "windows", "iptables", "linux"}:
         raise ValueError("source must be one of: auto, windows, iptables, linux")
 
-    if source == "windows" or (source == "auto" and _looks_like_windows_firewall_log(path)):
+    if source == "windows":
         return read_windows_firewall_log(path)
-    return read_iptables_firewall_log(path)
+    if source in {"iptables", "linux"}:
+        return read_iptables_firewall_log(path)
+
+    if _looks_like_windows_firewall_log(path):
+        return read_windows_firewall_log(path)
+    try:
+        return read_iptables_firewall_log(path)
+    except ValueError:
+        return read_windows_firewall_log(path)
 
 
 def find_default_firewall_log_paths() -> list[Path]:
@@ -200,4 +215,21 @@ def _infer_linux_action(line: str) -> str:
 
 def _looks_like_windows_firewall_log(path: str | Path) -> bool:
     text = str(path).lower()
-    return "pfirewall" in text or text.endswith(".log") and "windows" in text
+    if "pfirewall" in text or ("windows" in text and text.endswith(".log")):
+        return True
+
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if _WINDOWS_DATA_LINE_RE.match(stripped):
+                    return True
+                if "SRC=" in stripped and "DST=" in stripped:
+                    return False
+                break
+    except OSError:
+        return False
+
+    return False

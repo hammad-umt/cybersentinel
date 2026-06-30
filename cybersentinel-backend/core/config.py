@@ -230,9 +230,10 @@ class Settings(BaseSettings):
     GEOIP_BASE_URL: str = "http://ip-api.com/json"
 
     # ------------------------------------------------------------------
-    # API rate limiting (requests per minute per client IP)
+    # API rate limiting (requests per minute per client IP).
+    # Set to 0 to disable (recommended for local desktop engine).
     # ------------------------------------------------------------------
-    RATE_LIMIT_PER_MINUTE: int = 60
+    RATE_LIMIT_PER_MINUTE: int = 0
 
     # ------------------------------------------------------------------
     # Threat scoring weights for future cross-signal risk aggregation.
@@ -328,8 +329,8 @@ class Settings(BaseSettings):
         if "*" in self.CORS_ORIGINS and self.CORS_ALLOW_CREDENTIALS:
             raise ValueError("CORS_ALLOW_CREDENTIALS cannot be true when CORS_ORIGINS contains '*'")
 
-        if self.RATE_LIMIT_PER_MINUTE < 1:
-            raise ValueError("RATE_LIMIT_PER_MINUTE must be at least 1")
+        if self.RATE_LIMIT_PER_MINUTE < 0:
+            raise ValueError("RATE_LIMIT_PER_MINUTE must be 0 (disabled) or a positive integer")
 
         if self.MAX_UPLOAD_SIZE_MB < 1:
             raise ValueError("MAX_UPLOAD_SIZE_MB must be at least 1")

@@ -33,12 +33,22 @@ def _engine_kwargs() -> dict:
         kwargs["connect_args"] = {"check_same_thread": False}
         return kwargs
 
+    kwargs["pool_timeout"] = 30
+    kwargs["pool_recycle"] = 1800
+
     connect_args: dict = {"ssl": "require", "timeout": 30}
-    if ":6543" in settings.DATABASE_URL:
+    is_transaction_pool = ":6543" in settings.DATABASE_URL
+    if is_transaction_pool:
         connect_args["statement_cache_size"] = 0
-    kwargs["connect_args"] = connect_args
-    kwargs["pool_size"] = 10
-    kwargs["max_overflow"] = 20
+        kwargs["connect_args"] = connect_args
+        # Supabase transaction pooler (port 6543) — higher concurrency.
+        kwargs["pool_size"] = 5
+        kwargs["max_overflow"] = 5
+    else:
+        # Supabase session pooler (port 5432) — hard limit ~15 connections total.
+        kwargs["connect_args"] = connect_args
+        kwargs["pool_size"] = 2
+        kwargs["max_overflow"] = 2
     return kwargs
 
 
@@ -234,6 +244,8 @@ async def _ensure_postgres_tenant_unique_indexes(conn) -> None:
             "DROP CONSTRAINT IF EXISTS virus_scan_cache_lookup_key_key"
         )
     )
+    # Legacy SQLAlchemy / Supabase unique index on lookup_key alone (blocks per-user rows).
+    await conn.execute(text("DROP INDEX IF EXISTS ix_virus_scan_cache_lookup_key"))
     await conn.execute(
         text(
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_virus_scan_cache_user_lookup "
@@ -246,6 +258,7 @@ async def _ensure_postgres_tenant_unique_indexes(conn) -> None:
             "DROP CONSTRAINT IF EXISTS ip_reputation_cache_ip_address_key"
         )
     )
+    await conn.execute(text("DROP INDEX IF EXISTS ix_ip_reputation_cache_ip_address"))
     await conn.execute(
         text(
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_ip_reputation_cache_user_ip "
