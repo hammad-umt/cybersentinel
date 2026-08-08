@@ -39,10 +39,11 @@ ML Model/
   unsupervised_learning/models/
 ```
 
-The supervised route can load either the new
-`packet_classifier_pipeline.joblib` bundle or the legacy
-`packet_classifier.pkl`, `packet_scaler.pkl`, `packet_label_encoder.pkl`, and
-`packet_features.pkl` artifacts.
+The packet classifier loads cs-fyp XGBoost artifacts from `supervised_learning/models/`:
+
+- `supervised_model.joblib`, `scaler.joblib`, `unsupervised_model.joblib`, `training_report.json`
+
+Train with `python scripts/train_models.py` from the repo root.
 
 Firewall analysis requires:
 
@@ -112,20 +113,18 @@ SQLite (`sqlite+aiosqlite:///./cybersentinel.db`) remains supported for offline 
 
 Install `cryptography` from `requirements.txt` before encrypting.
 
-## ML Training Options
+## ML Training
 
-Supervised (`supervised_learning/model.py`):
+Packet classification (cs-fyp XGBoost engine):
 
 ```powershell
-python model.py --data_path ./dataset --model_type random_forest
-python model.py --data_path ./dataset/unsw --dataset_type unsw-nb15 --model_type svm
-python model.py --data_path ./dataset --dataset_type both --model_type decision_tree
+# From repo root
+python scripts/train_models.py --data supervised_learning/dataset --verbose
 ```
 
-Artifacts are saved as `packet_classifier_pipeline.{model_type}.joblib`. Inference
-accepts optional `model_type` on `POST /api/v1/packet/classify` and batch upload.
+Artifacts: `supervised_model.joblib`, `unsupervised_model.joblib`, `scaler.joblib`, `training_report.json` in `supervised_learning/models/`.
 
-Unsupervised (`unsupervised_learning/train.py`):
+Unsupervised firewall (`unsupervised_learning/train.py`):
 
 ```powershell
 python train.py --log-path C:\path\to\pfirewall.log --clustering-algorithm kmeans
@@ -137,7 +136,7 @@ Firewall analysis accepts optional `clustering_algorithm=kmeans|dbscan`.
 ## Main API Areas
 
 - `/api/v1/capture/*` - live Scapy/TShark packet metadata capture.
-- `/api/v1/packet/*` - supervised Random Forest packet/flow classification.
+- `/api/v1/packet/*` - XGBoost packet/flow classification + SOC fusion.
 - `/api/v1/packet/events.csv` - CSV export of packet events (same filters as JSON).
 - `/api/v1/firewall/*` - uploaded and real-time firewall log analysis.
 - `/api/v1/firewall/alerts.csv` - CSV export of firewall alerts (same filters as JSON).

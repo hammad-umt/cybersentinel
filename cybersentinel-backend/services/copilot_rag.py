@@ -100,10 +100,30 @@ class CopilotRetriever:
         return [self._chunks[idx] for idx in ranked if scores[idx] > 0]
 
 
-async def maybe_llm_answer(question: str, chunks: list[RetrievedChunk]) -> str | None:
-    if not settings.COPILOT_LLM_API_KEY or not settings.COPILOT_LLM_BASE_URL:
-        return None
-    context = "\n".join(f"- {chunk.text}" for chunk in chunks) or "No retrieved context."
+async def _is_external_copilot_url(url: str) -> bool:
+    return "/api/copilot/ask" in url or url.rstrip("/").endswith("/ask")
+
+
+async def _call_external_copilot(question: str, context: str) -> str:
+    payload = {
+        "question": question,
+        "platform_context": {"retrieved_context": context},
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.COPILOT_LLM_API_KEY}"
+    } if settings.COPILOT_LLM_API_KEY else {}
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        response = await client.post(settings.COPILOT_LLM_BASE_URL, json=payload, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        if isinstance(data, dict) and "plain_english_summary" in data:
+            return data["plain_english_summary"]
+        if isinstance(data, dict) and "answer" in data:
+            return data["answer"]
+        raise ValueError("Unsupported external chatbot response format")
+
+
+async def _call_openai_style_chatbot(question: str, context: str) -> str:
     payload = {
         "model": settings.COPILOT_LLM_MODEL or "gpt-4o-mini",
         "messages": [
@@ -114,9 +134,20 @@ async def maybe_llm_answer(question: str, chunks: list[RetrievedChunk]) -> str |
             {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
         ],
     }
-    headers = {"Authorization": f"Bearer {settings.COPILOT_LLM_API_KEY}"}
+    headers = {"Authorization": f"Bearer {settings.COPILOT_LLM_API_KEY}"} if settings.COPILOT_LLM_API_KEY else {}
     async with httpx.AsyncClient(timeout=20.0) as client:
         response = await client.post(settings.COPILOT_LLM_BASE_URL, json=payload, headers=headers)
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"]
+
+
+async def maybe_llm_answer(question: str, chunks: list[RetrievedChunk]) -> str | None:
+    if not settings.COPILOT_LLM_BASE_URL:
+        return None
+
+    context = "\n".join(f"- {chunk.text}" for chunk in chunks) or "No retrieved context."
+    if _is_external_copilot_url(settings.COPILOT_LLM_BASE_URL):
+        return await _call_external_copilot(question, context)
+
+    return await _call_openai_style_chatbot(question, context)

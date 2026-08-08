@@ -38,8 +38,9 @@ ServiceDep = Annotated[CopilotService, Depends(get_copilot_service)]
 @router.post(
     "/query",
     response_model=CopilotAnswerResponse,
-    summary="Ask Security Copilot (doc alias)",
+    summary="Alias for /ask (hidden from docs)",
     dependencies=[Depends(require_role("user"))],
+    include_in_schema=False,
 )
 async def ask_copilot(
     body: CopilotQuestionRequest,

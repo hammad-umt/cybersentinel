@@ -203,7 +203,7 @@ class Settings(BaseSettings):
     # These point to the .pkl / .joblib files your training scripts saved.
     # ------------------------------------------------------------------
 
-    # Supervised — packet classifier (CyberSentinelPacketClassifier bundle)
+    # Supervised — cs-fyp XGBoost artifacts (supervised_model.joblib + scaler.joblib)
     SUPERVISED_MODEL_DIR: Path = BASE_DIR.parent / "supervised_learning" / "models"
 
     # Unsupervised — firewall anomaly + clustering
@@ -236,12 +236,23 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 0
 
     # ------------------------------------------------------------------
-    # Threat scoring weights for future cross-signal risk aggregation.
+    # Threat scoring weights — legacy ensemble (kept for backward compat)
     # ------------------------------------------------------------------
     ENSEMBLE_WEIGHT_PACKET: float = 0.30
     ENSEMBLE_WEIGHT_ANOMALY: float = 0.35
     ENSEMBLE_WEIGHT_VIRUSTOTAL: float = 0.20
     ENSEMBLE_WEIGHT_IP_REPUTATION: float = 0.15
+
+    # Threat fusion weights (production formula)
+    FUSION_WEIGHT_PACKET: float = 0.30
+    FUSION_WEIGHT_FIREWALL: float = 0.25
+    FUSION_WEIGHT_IP_REPUTATION: float = 0.20
+    FUSION_WEIGHT_VIRUSTOTAL: float = 0.15
+    FUSION_WEIGHT_RULES: float = 0.10
+
+    INCIDENT_AUTO_CREATE_THRESHOLD: float = 61.0
+    REQUIRE_STRONG_JWT_SECRET: bool = True
+    MIN_PASSWORD_LENGTH: int = 12
     RESPONSE_ACTION_EXECUTION_ENABLED: bool = False
 
     @field_validator(
@@ -249,6 +260,11 @@ class Settings(BaseSettings):
         "ENSEMBLE_WEIGHT_ANOMALY",
         "ENSEMBLE_WEIGHT_VIRUSTOTAL",
         "ENSEMBLE_WEIGHT_IP_REPUTATION",
+        "FUSION_WEIGHT_PACKET",
+        "FUSION_WEIGHT_FIREWALL",
+        "FUSION_WEIGHT_IP_REPUTATION",
+        "FUSION_WEIGHT_VIRUSTOTAL",
+        "FUSION_WEIGHT_RULES",
         mode="after",
     )
     @classmethod
@@ -269,6 +285,9 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 50  # for CSV / log file uploads
     MAX_BATCH_FLOWS: int = 10_000
     MAX_PCAP_PACKETS: int = 5000
+    LIVE_FLOW_TIMEOUT_SECONDS: float = 60.0
+    LIVE_FLOW_MAX_IN_MEMORY: int = 10_000
+    LIVE_FLOW_MIN_PACKETS: int = 2
     DASHBOARD_TREND_DAYS: int = 7
     COPILOT_LLM_API_KEY: str = ""
     COPILOT_LLM_BASE_URL: str = ""
@@ -285,20 +304,24 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
 
     @property
-    def supervised_bundle_path(self) -> Path:
-        """Full path to the default random_forest supervised model bundle."""
-        return self.SUPERVISED_MODEL_DIR / "packet_classifier_pipeline.joblib"
+    def xgboost_supervised_path(self) -> Path:
+        return self.SUPERVISED_MODEL_DIR / "supervised_model.joblib"
 
-    def supervised_bundle_path_for(self, model_type: str) -> Path:
-        return self.SUPERVISED_MODEL_DIR / f"packet_classifier_pipeline.{model_type}.joblib"
+    @property
+    def xgboost_scaler_path(self) -> Path:
+        return self.SUPERVISED_MODEL_DIR / "scaler.joblib"
+
+    @property
+    def xgboost_unsupervised_path(self) -> Path:
+        return self.SUPERVISED_MODEL_DIR / "unsupervised_model.joblib"
+
+    @property
+    def training_report_path(self) -> Path:
+        return self.SUPERVISED_MODEL_DIR / "training_report.json"
 
     @property
     def anomaly_model_path(self) -> Path:
         return self.UNSUPERVISED_MODEL_DIR / "anomaly_model.joblib"
-
-    @property
-    def packet_anomaly_model_path(self) -> Path:
-        return self.SUPERVISED_MODEL_DIR / "packet_anomaly_isolation_forest.joblib"
 
     @property
     def clustering_model_path(self) -> Path:
@@ -317,14 +340,24 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> "Settings":
-        weights = (
+        ensemble_weights = (
             self.ENSEMBLE_WEIGHT_PACKET
             + self.ENSEMBLE_WEIGHT_ANOMALY
             + self.ENSEMBLE_WEIGHT_VIRUSTOTAL
             + self.ENSEMBLE_WEIGHT_IP_REPUTATION
         )
-        if abs(weights - 1.0) > 1e-9:
+        if abs(ensemble_weights - 1.0) > 1e-9:
             raise ValueError("Ensemble weights must sum to 1.0")
+
+        fusion_weights = (
+            self.FUSION_WEIGHT_PACKET
+            + self.FUSION_WEIGHT_FIREWALL
+            + self.FUSION_WEIGHT_IP_REPUTATION
+            + self.FUSION_WEIGHT_VIRUSTOTAL
+            + self.FUSION_WEIGHT_RULES
+        )
+        if abs(fusion_weights - 1.0) > 1e-9:
+            raise ValueError("Fusion weights must sum to 1.0")
 
         if "*" in self.CORS_ORIGINS and self.CORS_ALLOW_CREDENTIALS:
             raise ValueError("CORS_ALLOW_CREDENTIALS cannot be true when CORS_ORIGINS contains '*'")
@@ -337,6 +370,24 @@ class Settings(BaseSettings):
 
         if self.MAX_BATCH_FLOWS < 1:
             raise ValueError("MAX_BATCH_FLOWS must be at least 1")
+
+        weak_jwt_defaults = {
+            "change-me-in-production-use-openssl-rand-hex-32",
+            "changeme",
+            "secret",
+        }
+        if (
+            self.REQUIRE_STRONG_JWT_SECRET
+            and not self.DEBUG
+            and (
+                self.JWT_SECRET_KEY.strip().lower() in weak_jwt_defaults
+                or len(self.JWT_SECRET_KEY) < 32
+            )
+        ):
+            raise ValueError(
+                "JWT_SECRET_KEY must be at least 32 characters and not a default placeholder "
+                "when DEBUG=false. Generate with: openssl rand -hex 32"
+            )
 
         return self
 

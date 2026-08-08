@@ -12,14 +12,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.severity import translate_firewall_severity
-from db.models import FirewallAlert, IPReputationCache, PacketEvent, ResponseAction
+from db.models import FirewallAlert, Incident, IPReputationCache, PacketEvent, ResponseAction, ThreatScoreHistory
 from db.sql_compat import iso_day_bucket
 from schemas.dashboard import (
+    AttackBucket,
+    AttackDistribution,
     DashboardSummary,
     GeoBucket,
+    IncidentStats,
+    MitreBucket,
     ProtocolBucket,
     RecentAlert,
     SeverityBucket,
+    ThreatTrends,
     TrendPoint,
 )
 
@@ -48,6 +53,16 @@ class DashboardService:
 
         packet_events = await count_model(PacketEvent)
         firewall_alerts = await count_model(FirewallAlert)
+        incident_total = await count_model(Incident)
+        open_incidents = int(
+            (
+                await db.execute(
+                    select(func.count())
+                    .select_from(Incident)
+                    .where(Incident.user_id == uid, Incident.status == "Open")
+                )
+            ).scalar_one()
+        )
         response_actions = await count_model(ResponseAction)
         unacknowledged_alerts = int(
             (
@@ -121,6 +136,8 @@ class DashboardService:
         return DashboardSummary(
             packet_events=packet_events,
             firewall_alerts=firewall_alerts,
+            incidents=incident_total,
+            open_incidents=open_incidents,
             unacknowledged_alerts=unacknowledged_alerts,
             critical_alerts=critical_alerts,
             response_actions=response_actions,
@@ -161,4 +178,100 @@ class DashboardService:
                 )
                 for day, count, avg_score in trend_rows.all()
             ],
+        )
+
+    async def incident_stats(self) -> IncidentStats:
+        uid = self.user_id
+        db = self.db
+        total = await self._count(Incident)
+        status_rows = await db.execute(
+            select(Incident.status, func.count())
+            .where(Incident.user_id == uid)
+            .group_by(Incident.status)
+        )
+        severity_rows = await db.execute(
+            select(Incident.severity, func.count())
+            .where(Incident.user_id == uid)
+            .group_by(Incident.severity)
+        )
+        status_map = {str(s): int(c) for s, c in status_rows.all()}
+        sev_map = {str(s): int(c) for s, c in severity_rows.all()}
+        return IncidentStats(
+            total=total,
+            open=status_map.get("Open", 0),
+            investigating=status_map.get("Investigating", 0),
+            resolved=status_map.get("Resolved", 0),
+            closed=status_map.get("Closed", 0),
+            critical=sev_map.get("Critical", 0),
+            high=sev_map.get("High", 0),
+        )
+
+    async def attack_distribution(self) -> AttackDistribution:
+        uid = self.user_id
+        attack_rows = await self.db.execute(
+            select(PacketEvent.raw_model_prediction, func.count())
+            .where(PacketEvent.user_id == uid, PacketEvent.raw_model_prediction.is_not(None))
+            .group_by(PacketEvent.raw_model_prediction)
+            .order_by(desc(func.count()))
+            .limit(20)
+        )
+        mitre_rows = await self.db.execute(
+            select(Incident.mitre_id, Incident.mitre_technique, func.count())
+            .where(Incident.user_id == uid, Incident.mitre_id.is_not(None))
+            .group_by(Incident.mitre_id, Incident.mitre_technique)
+            .order_by(desc(func.count()))
+            .limit(20)
+        )
+        return AttackDistribution(
+            attacks=[
+                AttackBucket(attack_type=str(a), count=int(c))
+                for a, c in attack_rows.all()
+                if a
+            ],
+            mitre=[
+                MitreBucket(mitre_id=str(mid), technique=str(tech or ""), count=int(c))
+                for mid, tech, c in mitre_rows.all()
+                if mid
+            ],
+        )
+
+    async def threat_trends(self) -> ThreatTrends:
+        uid = self.user_id
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=settings.DASHBOARD_TREND_DAYS)).isoformat()
+        day_bucket = iso_day_bucket(ThreatScoreHistory.timestamp)
+        trend_rows = await self.db.execute(
+            select(day_bucket, func.count(), func.avg(ThreatScoreHistory.threat_score))
+            .where(ThreatScoreHistory.user_id == uid, ThreatScoreHistory.timestamp >= cutoff)
+            .group_by(day_bucket)
+            .order_by(day_bucket)
+        )
+        top_rows = await self.db.execute(
+            select(
+                ThreatScoreHistory.ip_address,
+                func.max(ThreatScoreHistory.threat_score).label("max_score"),
+                func.count().label("hits"),
+            )
+            .where(ThreatScoreHistory.user_id == uid)
+            .group_by(ThreatScoreHistory.ip_address)
+            .order_by(desc(func.max(ThreatScoreHistory.threat_score)))
+            .limit(10)
+        )
+        return ThreatTrends(
+            trend=[
+                TrendPoint(day=str(d), alert_count=0, avg_threat_score=round(float(avg or 0), 2), incident_count=int(c))
+                for d, c, avg in trend_rows.all()
+            ],
+            top_attackers=[
+                {"ip": ip, "max_threat_score": round(float(score or 0), 2), "observations": int(hits)}
+                for ip, score, hits in top_rows.all()
+            ],
+        )
+
+    async def _count(self, model: type) -> int:
+        return int(
+            (
+                await self.db.execute(
+                    select(func.count()).select_from(model).where(model.user_id == self.user_id)
+                )
+            ).scalar_one()
         )

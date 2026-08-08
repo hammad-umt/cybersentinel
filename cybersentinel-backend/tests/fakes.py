@@ -20,6 +20,8 @@ class FakePacketClassifier:
                     {
                         "prediction": "Normal",
                         "confidence": 0.0,
+                        "raw_model_prediction": "Insufficient Evidence",
+                        "raw_model_confidence": 0.0,
                         "prob_Normal": 1.0,
                         "prob_Suspicious": 0.0,
                         "prob_Malicious": 0.0,
@@ -33,6 +35,8 @@ class FakePacketClassifier:
                     {
                         "prediction": "Normal",
                         "confidence": 0.92,
+                        "raw_model_prediction": "Benign",
+                        "raw_model_confidence": 0.88,
                         "prob_Normal": 0.92,
                         "prob_Suspicious": 0.06,
                         "prob_Malicious": 0.02,
@@ -74,12 +78,11 @@ def build_test_registry() -> ModelRegistry:
     classifier = FakePacketClassifier()
     pipeline = FakeFirewallPipeline()
     return ModelRegistry(
-        packet_classifiers={DEFAULT_PACKET_MODEL_TYPE: classifier},
         packet_classifier=classifier,
         packet_classifier_available=True,
         packet_classifier_meta={
-            "available_model_types": [DEFAULT_PACKET_MODEL_TYPE],
-            "default_model_type": DEFAULT_PACKET_MODEL_TYPE,
+            "engine": "cs-fyp_xgboost",
+            "model_type": DEFAULT_PACKET_MODEL_TYPE,
         },
         firewall_pipelines={DEFAULT_CLUSTERING_ALGORITHM: pipeline},
         firewall_pipeline=pipeline,

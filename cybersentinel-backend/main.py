@@ -25,15 +25,19 @@ from services.auth_service import decode_access_token
 from db.database import AsyncSessionLocal, check_database, create_tables, engine
 from models.loader import ModelRegistry
 from routers.auth import router as auth_router
+from routers.agent import router as agent_router
 from routers.copilot import router as copilot_router
 from routers.dashboard import router as dashboard_router
 from routers.firewall import router as firewall_router
+from routers.incidents import router as incidents_router
 from routers.intel import router as intel_router
 from routers.packet import router as packet_router
 from routers.capture import router as capture_router
-from routers.reports import router as reports_router
+from routers.training import router as training_router
 from routers.response import router as response_router
+from routers.reports import router as reports_router
 from routers.threat import router as threat_router
+from routers.ws import router as ws_router
 from services.auth_service import ensure_default_admin
 from services.packet_capture_service import set_background_event_loop
 
@@ -92,9 +96,9 @@ app = FastAPI(
     version=settings.APP_VERSION,
     debug=settings.DEBUG,
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG else None,
 )
 configure_openapi(app)
 
@@ -183,6 +187,10 @@ async def production_safety_middleware(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    if not settings.DEBUG:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 
@@ -205,9 +213,13 @@ app.include_router(capture_router)
 app.include_router(threat_router)
 app.include_router(intel_router)
 app.include_router(dashboard_router)
+app.include_router(incidents_router)
+app.include_router(agent_router)
 app.include_router(response_router)
 app.include_router(copilot_router)
 app.include_router(reports_router)
+app.include_router(training_router)
+app.include_router(ws_router)
 
 
 @app.exception_handler(HTTPException)
@@ -279,7 +291,7 @@ async def health(request: Request) -> dict[str, Any]:
             "packet_anomaly_detector": {
                 "available": models.packet_anomaly_available,
                 "metadata": models.packet_anomaly_meta,
-                "path": str(settings.packet_anomaly_model_path),
+                "path": str(settings.SUPERVISED_MODEL_DIR),
             },
             "firewall_pipeline": {
                 "available": models.firewall_pipeline_available,

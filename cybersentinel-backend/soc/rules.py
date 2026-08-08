@@ -16,9 +16,9 @@ class SOCRuleContext:
     flow_packets_per_second: float | None = None
     syn_count: float = 0.0
     ack_count: float = 0.0
-    rf_prediction: str = "Normal"
-    rf_max_probability: float = 0.0
-    rf_malicious_probability: float = 0.0
+    ml_prediction: str = "Normal"
+    ml_max_probability: float = 0.0
+    ml_malicious_probability: float = 0.0
     packet_anomaly_level: AnomalyLevel = "Normal"
     firewall_anomaly_level: AnomalyLevel = "Normal"
 
@@ -54,15 +54,16 @@ class SOCRuleEngine:
             result.minimum_risk = max(result.minimum_risk, 70.0)
             self._trigger(result, 45.0, "Malicious IP behavior", "Firewall behavior classified as Malicious.")
 
-        if context.packet_anomaly_level == "Suspicious" and context.rf_prediction == "Normal":
-            result.force_prediction = "Suspicious"
-            result.minimum_risk = max(result.minimum_risk, 40.0)
-            self._trigger(
-                result,
-                0.0,
-                "Packet anomaly override",
-                "RF classified as Normal but packet anomaly score is Suspicious.",
-            )
+        if context.packet_anomaly_level == "Suspicious" and context.ml_prediction == "Normal":
+            if context.ml_max_probability < 0.95:
+                result.force_prediction = "Suspicious"
+                result.minimum_risk = max(result.minimum_risk, 40.0)
+                self._trigger(
+                    result,
+                    0.0,
+                    "Packet anomaly override",
+                    "Classifier labeled Normal but packet anomaly score is Suspicious.",
+                )
         elif context.packet_anomaly_level == "Malicious":
             result.force_prediction = "Malicious"
             result.minimum_risk = max(result.minimum_risk, 70.0)
@@ -73,24 +74,48 @@ class SOCRuleEngine:
                 "Packet anomaly score is Malicious.",
             )
 
-        if context.rf_prediction == "Malicious" and context.rf_malicious_probability > 0.85:
+        if context.ml_prediction == "Malicious" and context.ml_malicious_probability > 0.85:
             result.minimum_risk = max(result.minimum_risk, 70.0)
             self._trigger(
                 result,
                 0.0,
                 "High confidence attack",
-                "RF malicious probability exceeded 0.85, enforcing high-risk floor.",
+                "Malicious probability exceeded 0.85, enforcing high-risk floor.",
             )
 
-        if context.rf_max_probability < 0.60:
+        if context.ml_max_probability < 0.60:
             result.force_prediction = "Suspicious"
             result.minimum_risk = max(result.minimum_risk, 40.0)
             self._trigger(
                 result,
                 0.0,
-                "RF weak confidence",
-                "RF confidence is low so uncertainty is handled as Suspicious.",
+                "ML weak confidence",
+                "Classifier confidence is low so uncertainty is handled as Suspicious.",
             )
+
+        result.score = min(result.score, 100.0)
+        return result
+
+    def merge_signature(self, result: SOCRuleResult, signature: dict[str, object]) -> SOCRuleResult:
+        """Merge cs-fyp feature-signature rule hits into contextual SOC output."""
+        if not signature.get("rule_triggered"):
+            return result
+
+        from ml_engine.siem_rules import signature_rule_policy
+
+        for rule_name in signature.get("all_rules", []):
+            score, force, floor = signature_rule_policy(str(rule_name))
+            self._trigger(
+                result,
+                score,
+                str(rule_name),
+                f"Signature rule matched: {rule_name}.",
+            )
+            if force == "Malicious":
+                result.force_prediction = "Malicious"
+            elif force == "Suspicious" and result.force_prediction != "Malicious":
+                result.force_prediction = "Suspicious"
+            result.minimum_risk = max(result.minimum_risk, floor)
 
         result.score = min(result.score, 100.0)
         return result
@@ -104,8 +129,16 @@ class SOCRuleEngine:
 
     @staticmethod
     def _is_ddos_burst(context: SOCRuleContext) -> bool:
+        # Established TCP sessions (e.g. HTTPS) can be short and bursty without being attacks.
+        if context.syn_count <= 3 and context.ack_count >= 10:
+            return False
+
         duration = context.flow_duration or 0.0
         duration_seconds = duration / 1_000_000.0 if duration > 10_000 else duration
         high_rate = (context.flow_packets_per_second or 0.0) >= 1000.0
-        short_high_volume = duration_seconds > 0 and duration_seconds <= 1.0 and context.total_packets >= 100.0
+        short_high_volume = (
+            duration_seconds > 0
+            and duration_seconds <= 0.3
+            and context.total_packets >= 400.0
+        )
         return high_rate or short_high_volume

@@ -8,7 +8,7 @@ external threat intelligence into one severity label for the frontend.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -19,10 +19,15 @@ class UnifiedThreatScore(BaseModel):
     success: bool = True
     ip: str
     packet_score: float = Field(ge=0.0, le=100.0)
-    anomaly_score: float = Field(ge=0.0, le=100.0)
+    anomaly_score: float = Field(ge=0.0, le=100.0, description="Firewall anomaly score")
     intel_score: float = Field(ge=0.0, le=100.0)
-    final_score: float = Field(ge=0.0, le=100.0)
-    severity: str = Field(description="Low | Medium | High | Critical")
+    final_score: float = Field(ge=0.0, le=100.0, description="Legacy alias of threat_score")
+    threat_score: float = Field(ge=0.0, le=100.0)
+    risk_level: str = Field(description="Safe | Low | Medium | High | Critical")
+    severity: str = Field(description="Legacy alias of risk_level")
+    attack_type: Optional[str] = None
+    mitre_id: Optional[str] = None
+    mitre_technique: Optional[str] = None
     classification: str = Field(description="Primary classification label for the IP")
     block_recommended: bool = Field(description="Whether the IP should be blocked")
     reason: str = Field(description="Decision rationale for the classification")

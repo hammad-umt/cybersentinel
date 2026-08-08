@@ -19,7 +19,9 @@ from core.ttl_cache import get_or_set
 from core.tenant import get_current_user_id
 from db.database import get_db
 from schemas.auth import ThreatQueueRequest, ThreatQueueResponse
+from schemas.threat_fusion import ThreatFusionInput, ThreatFusionResult
 from schemas.threat_score import TopThreatsResponse, UnifiedThreatScore
+from services.threat_fusion_service import ThreatFusionService
 from services.threat_scoring_service import ThreatScoringService
 
 router = APIRouter(prefix="/api/v1/threat", tags=["Unified Threat Scoring"])
@@ -103,4 +105,24 @@ async def top_threats(
         )
     except Exception as exc:
         logger.exception("Unexpected error in top_threats")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.post(
+    "/fuse",
+    response_model=ThreatFusionResult,
+    summary="Compute threat fusion score from explicit inputs",
+    dependencies=[Depends(require_role("user"))],
+)
+async def fuse_threat(
+    body: ThreatFusionInput,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> ThreatFusionResult:
+    user_id = get_current_user_id(request)
+    try:
+        service = ThreatFusionService(db=db, user_id=user_id)
+        return await service.fuse_and_persist(body)
+    except Exception as exc:
+        logger.exception("Unexpected error in fuse_threat")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))

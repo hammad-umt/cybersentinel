@@ -60,13 +60,25 @@ ServiceDep = Annotated[PacketService, Depends(get_packet_service)]
 # Routes
 # ---------------------------------------------------------------------------
 
+@router.get(
+    "/features",
+    summary="Canonical packet feature names (cs-fyp)",
+    description="Returns the 23 feature keys required in classify request bodies.",
+    dependencies=[Depends(require_role("user"))],
+)
+async def list_packet_features() -> dict[str, list[str]]:
+    from ml_engine.features import FEATURE_NAMES
+
+    return {"features": list(FEATURE_NAMES)}
+
+
 @router.post(
     "/classify",
     response_model=PacketClassifyResponse,
     summary="Classify a single network flow",
     description=(
-        "Send one network flow's features and receive a Normal / Suspicious / "
-        "Malicious fused SOC label with separate RF and final confidence scores."
+        "Send one network flow's 23 canonical features (cs-fyp FEATURE_NAMES) and receive "
+        "a Normal / Suspicious / Malicious fused SOC label."
     ),
     dependencies=[Depends(require_role("user"))],
 )
@@ -75,7 +87,7 @@ async def classify_single(
     service: ServiceDep,
 ) -> PacketClassifyResponse:
     try:
-        return await service.classify_single(body.flow, model_type=body.model_type)
+        return await service.classify_single(body.to_flow_input())
     except ModelNotAvailableError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
     except Exception as exc:
@@ -97,10 +109,6 @@ async def classify_single(
 async def classify_batch_csv(
     service: ServiceDep,
     file: UploadFile = File(..., description="CSV file of network flows"),
-    model_type: Optional[str] = Query(
-        default=None,
-        description="random_forest | decision_tree | svm",
-    ),
 ) -> PacketBatchResponse:
     # Validate file type
     filename = file.filename or ""
@@ -135,17 +143,27 @@ async def classify_batch_csv(
                 detail=f"CSV contains {len(df)} rows; maximum is {settings.MAX_BATCH_FLOWS}.",
             )
 
-        # Convert DataFrame rows into FlowFeatures objects
-        from schemas.packet import FlowFeatures
+        from ml_engine.column_mapping import csv_row_to_feature_vector
+        from schemas.packet import FlowFeatureVector, PacketClassifyRequest
+
         flows = []
         for _, row in df.iterrows():
             clean_row = {
                 key: (None if pd.isna(value) else value)
                 for key, value in row.to_dict().items()
             }
-            flows.append(FlowFeatures.model_validate(clean_row))
+            feature_values = csv_row_to_feature_vector(clean_row)
+            flows.append(
+                PacketClassifyRequest(
+                    features=FlowFeatureVector.model_validate(feature_values),
+                    source_ip=clean_row.get("src_ip") or clean_row.get("source_ip"),
+                    dest_ip=clean_row.get("dst_ip") or clean_row.get("dest_ip"),
+                    dest_port=clean_row.get("dst_port") or clean_row.get("dest_port"),
+                    protocol=str(clean_row.get("protocol") or "TCP"),
+                ).to_flow_input()
+            )
 
-        return await service.classify_batch(flows, source="batch", model_type=model_type)
+        return await service.classify_batch(flows, source="batch")
 
     except ModelNotAvailableError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
@@ -220,7 +238,7 @@ def _packet_events_to_csv(rows) -> str:
         "dst_port",
         "protocol",
         "prediction",
-        "rf_confidence",
+        "ml_confidence",
         "risk_score",
         "source",
     ])

@@ -5,26 +5,41 @@ from __future__ import annotations
 from typing import Any
 
 SAMPLE_FLOW = {
-    "Flow Duration": 1_200_000,
-    "Total Fwd Packets": 6,
-    "Total Backward Packets": 5,
-    "Total Length of Fwd Packets": 400,
-    "Total Length of Bwd Packets": 900,
-    "Fwd Packet Length Max": 80,
-    "Fwd Packet Length Min": 20,
-    "Fwd Packet Length Mean": 50.0,
-    "Fwd Packet Length Std": 15.0,
-    "Bwd Packet Length Max": 200,
-    "Bwd Packet Length Min": 40,
-    "Bwd Packet Length Mean": 120.0,
-    "Bwd Packet Length Std": 40.0,
-    "src_ip": "10.0.0.1",
-    "dst_ip": "8.8.8.8",
-    "dst_port": 443,
+    "source_ip": "10.0.0.1",
+    "dest_ip": "8.8.8.8",
+    "dest_port": 443,
     "protocol": "TCP",
+    "features": {
+        "flow_duration": 1_200_000,
+        "total_fwd_packets": 6,
+        "total_bwd_packets": 5,
+        "total_length_fwd": 400,
+        "total_length_bwd": 900,
+        "fwd_packet_length_max": 80,
+        "bwd_packet_length_max": 200,
+        "flow_bytes_per_s": 1083.33,
+        "flow_packets_per_s": 9.17,
+        "flow_iat_mean": 120000.0,
+        "flow_iat_std": 40000.0,
+        "fwd_iat_mean": 100000.0,
+        "bwd_iat_mean": 140000.0,
+        "syn_flag_count": 1,
+        "ack_flag_count": 10,
+        "fin_flag_count": 1,
+        "rst_flag_count": 0,
+        "psh_flag_count": 4,
+        "urg_flag_count": 0,
+        "down_up_ratio": 2.25,
+        "avg_packet_size": 118.18,
+        "unique_dest_ports": 1,
+        "failed_connections": 0,
+    },
 }
 
-SPARSE_FLOW = {"src_ip": "1.2.3.4"}
+SPARSE_FLOW = {
+    "source_ip": "1.2.3.4",
+    "features": {},
+}
 
 IPTABLES_LOG_CONTENT = (
     "Jun 09 14:01:05 host kernel: [UFW BLOCK] "
@@ -46,8 +61,7 @@ FIREWALL_INGEST_EVENT = {
 }
 
 BATCH_CSV = (
-    "Flow Duration,Total Fwd Packets,Total Backward Packets,"
-    "Total Length of Fwd Packets,Total Length of Bwd Packets\n"
+    "flow_duration,total_fwd_packets,total_bwd_packets,total_length_fwd,total_length_bwd\n"
     "1200000,6,5,400,900\n"
 )
 

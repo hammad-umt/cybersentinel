@@ -51,6 +51,8 @@ from schemas.capture import (
     FirewallMonitorResponse,
     NetworkInterface,
 )
+from services.live_flow_processor import LiveFlowProcessor, LiveFlowState
+from services.packet_service import PacketService
 from services.threat_scoring_service import ThreatScoringService
 
 # ---------------------------------------------------------------------------
@@ -77,6 +79,7 @@ def _new_capture_state() -> Dict[str, Any]:
         "packets": deque(maxlen=10000),
         "stop_event": None,
         "thread": None,
+        "flow_processor": None,
     }
 
 
@@ -385,8 +388,20 @@ def _scapy_capture_thread(
                 flow["src_port"] = udp.sport
                 flow["dst_port"] = udp.dport
 
-            features = _extract_scapy_features(pkt, flow)
-            _classify_store_and_score_flow(flow, features, registry, user_id=user_id)
+            flags = None
+            if pkt.haslayer(TCP):
+                flags = _tcp_flags_from_int(int(pkt[TCP].flags))
+            _ingest_live_packet(
+                src_ip=ip.src,
+                dst_ip=ip.dst,
+                src_port=flow.get("src_port"),
+                dst_port=flow.get("dst_port"),
+                protocol=str(flow.get("protocol") or "OTHER"),
+                packet_size=len(pkt),
+                flags=flags,
+                registry=registry,
+                user_id=user_id,
+            )
 
         logger.info(
             "Scapy capture starting — interface={} limit={} timeout={}s filter={}",
@@ -532,9 +547,19 @@ def _tshark_capture_thread(
             if stop_event.is_set():
                 proc.terminate()
                 break
-            flow, features = _parse_tshark_fields(line)
-            if flow:
-                _classify_store_and_score_flow(flow, features, registry, user_id=user_id)
+            flow, meta = _parse_tshark_fields(line)
+            if meta:
+                _ingest_live_packet(
+                    src_ip=meta["src_ip"],
+                    dst_ip=meta["dst_ip"],
+                    src_port=meta.get("src_port"),
+                    dst_port=meta.get("dst_port"),
+                    protocol=meta.get("protocol", "OTHER"),
+                    packet_size=meta.get("pkt_size", 0),
+                    flags=meta.get("flags"),
+                    registry=registry,
+                    user_id=user_id,
+                )
 
     except FileNotFoundError:
         logger.error(
@@ -548,8 +573,8 @@ def _tshark_capture_thread(
         logger.info("TShark capture thread stopped.")
 
 
-def _parse_tshark_fields(line: str) -> tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
-    """Parse one TShark fields line into display metadata and ML features."""
+def _parse_tshark_fields(line: str) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Parse one TShark fields line into packet metadata for flow aggregation."""
     try:
         parts = line.rstrip("\n").split("\t")
         while len(parts) < 11:
@@ -564,42 +589,31 @@ def _parse_tshark_fields(line: str) -> tuple[Optional[Dict[str, Any]], Dict[str,
             frame_len,
             ip_proto,
             tcp_flags,
-            tcp_window,
+            _tcp_window,
             ws_protocol,
         ) = parts[:11]
 
         if not src_ip or not dst_ip:
-            return None, {}
+            return None, None
 
         proto = (ws_protocol or _ip_protocol_name(ip_proto) or "OTHER").upper()
         src_port = _optional_int(tcp_src or udp_src)
         dst_port = _optional_int(tcp_dst or udp_dst)
         pkt_size = _optional_int(frame_len) or 0
+        flags_int = _parse_int(tcp_flags)
+        flags = _tcp_flags_from_int(flags_int) if flags_int is not None else None
 
-        flow = {
-            "packet_id": str(uuid.uuid4())[:8],
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+        return None, {
             "src_ip": src_ip,
             "dst_ip": dst_ip,
             "src_port": src_port,
             "dst_port": dst_port,
             "protocol": proto,
             "pkt_size": pkt_size,
-            "prediction": "Insufficient Evidence",
-            "confidence": 0.0,
-            "threat_score": 0.0,
-            "features_extracted": 0,
+            "flags": flags,
         }
-        flags = _parse_int(tcp_flags)
-        features = _single_packet_features(
-            size=pkt_size,
-            flow=flow,
-            tcp_flags=flags,
-            tcp_window=_parse_int(tcp_window) or 0,
-        )
-        return flow, features
     except Exception:
-        return None, {}
+        return None, None
 
 
 def _optional_int(value: object) -> Optional[int]:
@@ -622,6 +636,115 @@ def _parse_int(value: object) -> Optional[int]:
 
 def _ip_protocol_name(value: str) -> str | None:
     return {"6": "TCP", "17": "UDP", "1": "ICMP"}.get(str(value).strip())
+
+
+def _tcp_flags_from_int(flags: int) -> dict[str, bool]:
+    return {
+        "SYN": bool(flags & 0x02),
+        "ACK": bool(flags & 0x10),
+        "FIN": bool(flags & 0x01),
+        "RST": bool(flags & 0x04),
+        "PSH": bool(flags & 0x08),
+        "URG": bool(flags & 0x20),
+    }
+
+
+def _ingest_live_packet(
+    *,
+    src_ip: str,
+    dst_ip: str,
+    src_port: int | None,
+    dst_port: int | None,
+    protocol: str,
+    packet_size: int,
+    flags: dict[str, bool] | None,
+    registry: ModelRegistry,
+    user_id: str,
+) -> None:
+    """Aggregate packets into bidirectional flows; classify on flow completion."""
+    processor: LiveFlowProcessor | None = _capture_state_for(user_id).get("flow_processor")
+    if processor is None:
+        return
+    processor.ingest(
+        src_ip=src_ip,
+        dst_ip=dst_ip,
+        src_port=src_port,
+        dst_port=dst_port,
+        protocol=protocol,
+        packet_size=packet_size,
+        flags=flags,
+    )
+    for _ in processor.flush_expired():
+        pass
+
+
+def _schedule_flow_classification(
+    flow_state: LiveFlowState,
+    registry: ModelRegistry,
+    user_id: str,
+) -> None:
+    loop = _app_event_loop
+    if loop is None or not loop.is_running():
+        logger.warning("Skipping flow classification: application event loop is unavailable")
+        return
+    future = asyncio.run_coroutine_threadsafe(
+        _classify_and_store_flow(flow_state, registry, user_id),
+        loop,
+    )
+    future.add_done_callback(_log_background_failure)
+
+
+async def _classify_and_store_flow(
+    flow_state: LiveFlowState,
+    registry: ModelRegistry,
+    user_id: str,
+) -> None:
+    """Run full hybrid SOC pipeline (XGBoost + IF + rules + fusion) on a completed flow."""
+    if not registry.packet_classifier_available:
+        return
+
+    async with AsyncSessionLocal() as session:
+        try:
+            service = PacketService(registry=registry, db=session, user_id=user_id)
+            response = await service.classify_single(flow_state.to_flow_features())
+            result = response.result
+            entry = {
+                "packet_id": flow_state.flow_id,
+                "timestamp": datetime.fromtimestamp(flow_state.last_seen, tz=timezone.utc).isoformat(),
+                "src_ip": flow_state.fwd_ip,
+                "dst_ip": flow_state.bwd_ip,
+                "src_port": flow_state.fwd_port or None,
+                "dst_port": flow_state.bwd_port or None,
+                "protocol": flow_state.protocol,
+                "pkt_size": flow_state.fwd_bytes + flow_state.bwd_bytes,
+                "prediction": result.prediction,
+                "confidence": result.final_confidence,
+                "threat_score": result.risk_score,
+                "features_extracted": int(round((result.feature_coverage or 0.0) * 23)),
+                "source": "live_flow",
+            }
+            _capture_state_for(user_id)["packets"].append(entry)
+            if _should_score_packet(entry):
+                await ThreatScoringService(db=session, user_id=user_id).score(
+                    str(flow_state.fwd_ip),
+                    {
+                        "source": "live_flow_capture",
+                        "flow_id": flow_state.flow_id,
+                        "prediction": result.prediction,
+                        "risk_score": result.risk_score,
+                    },
+                )
+            await session.commit()
+            logger.info(
+                "Live flow classified {} → {} → {} (risk={})",
+                flow_state.flow_id,
+                flow_state.fwd_ip,
+                result.prediction,
+                result.risk_score,
+            )
+        except Exception:
+            await session.rollback()
+            raise
 
 
 def _classify_store_and_score_flow(
@@ -1037,6 +1160,11 @@ class PacketCaptureService:
         })
         state["packets"].clear()
 
+        def _on_flow_complete(flow: LiveFlowState) -> None:
+            _schedule_flow_classification(flow, self.registry, self.user_id)
+
+        state["flow_processor"] = LiveFlowProcessor(on_flow_complete=_on_flow_complete)
+
         target_fn = _tshark_capture_thread if use_tshark else _scapy_capture_thread
         thread = threading.Thread(
             target=target_fn,
@@ -1061,7 +1189,7 @@ class PacketCaptureService:
             interface=iface.name,
             packets_captured=0,
             started_at=state["started_at"],
-            message=f"{engine.upper()} capture started on '{iface.name}'.",
+            message=f"{engine.upper()} capture started on '{iface.name}'. Flows are aggregated before hybrid ML classification.",
         )
 
     async def stop_capture(self) -> CaptureStatusResponse:
@@ -1077,9 +1205,13 @@ class PacketCaptureService:
         if stop_event:
             stop_event.set()
 
+        processor: LiveFlowProcessor | None = state.get("flow_processor")
+        if processor is not None:
+            processor.flush_all()
+
         state["running"] = False
         count = len(state["packets"])
-        logger.info("Capture stopped. {} packets captured.", count)
+        logger.info("Capture stopped. {} flow(s) classified.", count)
 
         return CaptureStatusResponse(
             is_running=False,
@@ -1087,7 +1219,7 @@ class PacketCaptureService:
             interface=state.get("interface"),
             packets_captured=count,
             started_at=state.get("started_at"),
-            message=f"Capture stopped. {count} packets captured.",
+            message=f"Capture stopped. {count} flow(s) classified.",
         )
 
     async def get_status(self) -> CaptureStatusResponse:
@@ -1131,6 +1263,7 @@ class PacketCaptureService:
         from scapy.utils import PcapReader
         import io
 
+        processor = LiveFlowProcessor()
         processed = 0
         reader = PcapReader(io.BytesIO(file_bytes))
         try:
@@ -1140,48 +1273,45 @@ class PacketCaptureService:
                 if not hasattr(pkt, "haslayer") or not pkt.haslayer(IP):
                     continue
                 ip = pkt[IP]
-                flow: Dict[str, Any] = {
-                    "packet_id": str(uuid.uuid4())[:8],
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "src_ip": ip.src,
-                    "dst_ip": ip.dst,
-                    "pkt_size": len(pkt),
-                    "protocol": "OTHER",
-                    "src_port": None,
-                    "dst_port": None,
-                    "prediction": "Pending",
-                    "confidence": 0.0,
-                    "threat_score": 0.0,
-                    "features_extracted": 0,
-                    "source": "pcap_import",
-                }
+                src_port = None
+                dst_port = None
+                protocol = "OTHER"
+                flags = None
                 if pkt.haslayer(TCP):
                     tcp = pkt[TCP]
-                    flow["protocol"] = "TCP"
-                    flow["src_port"] = tcp.sport
-                    flow["dst_port"] = tcp.dport
+                    protocol = "TCP"
+                    src_port = tcp.sport
+                    dst_port = tcp.dport
+                    flags = _tcp_flags_from_int(int(tcp.flags))
                 elif pkt.haslayer(UDP):
                     udp = pkt[UDP]
-                    flow["protocol"] = "UDP"
-                    flow["src_port"] = udp.sport
-                    flow["dst_port"] = udp.dport
-                features = _extract_scapy_features(pkt, flow)
-                _classify_store_and_score_flow(
-                    flow,
-                    features,
-                    self.registry,
-                    model_type=model_type,
-                    user_id=self.user_id,
+                    protocol = "UDP"
+                    src_port = udp.sport
+                    dst_port = udp.dport
+                processor.ingest(
+                    src_ip=ip.src,
+                    dst_ip=ip.dst,
+                    src_port=src_port,
+                    dst_port=dst_port,
+                    protocol=protocol,
+                    packet_size=len(pkt),
+                    flags=flags,
                 )
                 processed += 1
         finally:
             reader.close()
 
+        flows = processor.flush_all()
+        for flow in flows:
+            await _classify_and_store_flow(flow, self.registry, self.user_id)
+
+        classified = len(self._capture_state()["packets"])
         return CaptureStatusResponse(
             success=True,
             is_running=False,
-            packets_captured=processed,
-            message=f"Imported {processed} packet(s) from PCAP.",
+            packets_captured=classified,
+            packets_classified=classified,
+            message=f"Imported {processed} packet(s), classified {classified} flow(s) via hybrid SOC pipeline.",
         )
 
     # ------------------------------------------------------------------

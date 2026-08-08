@@ -82,9 +82,9 @@ IntelServiceDep = Annotated[ThreatIntelService, Depends(get_threat_intel_service
 @router.post(
     "/upload",
     response_model=FirewallAnalyzeResponse,
-    summary="Analyze an uploaded firewall log (doc alias)",
+    summary="Alias for /analyze (hidden from docs)",
     dependencies=[Depends(require_role("user"))],
-    include_in_schema=True,
+    include_in_schema=False,
 )
 async def analyze_firewall_log(
     service: ServiceDep,

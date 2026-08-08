@@ -168,7 +168,7 @@ async def get_packets(service: ServiceDep) -> CapturedPacketsResponse:
 async def import_pcap_file(
     service: ServiceDep,
     file: UploadFile = File(..., description="Offline .pcap capture file"),
-    model_type: str | None = Query(default=None, description="random_forest | decision_tree | svm"),
+    model_type: str | None = Query(default=None, description="Ignored — XGBoost is always used"),
 ) -> CaptureStatusResponse:
     filename = (file.filename or "").lower()
     if not filename.endswith(".pcap"):

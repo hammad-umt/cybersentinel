@@ -5,7 +5,7 @@ Business logic for the supervised packet classification module.
 
 Responsibilities:
   1. Convert incoming Pydantic schema objects into a pandas DataFrame
-     that CyberSentinelPacketClassifier.predict() expects
+     that the packet classifier predict() expects
   2. Call the classifier
   3. Convert raw classifier output into clean response schemas
   4. Persist every result to the packet_events DB table
@@ -27,10 +27,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 
 from core.config import settings
+from core.mitre_mapper import map_attack_to_mitre, mitre_from_rules
 from db.models import FirewallAlert, PacketEvent
 from models.loader import ModelRegistry
 from schemas.packet import (
-    FlowFeatures,
+    FlowFeatureVector,
+    FlowInput,
     PacketBatchResponse,
     PacketClassifyResponse,
     PacketEventOut,
@@ -39,6 +41,11 @@ from schemas.packet import (
 )
 from soc.fusion import FusionInput, SOCFusionEngine
 from soc.rules import SOCRuleContext, SOCRuleEngine
+from ml_engine.column_mapping import flows_to_feature_matrix
+from ml_engine.features import FEATURE_NAMES, MIN_PRODUCTION_FEATURE_COVERAGE
+from ml_engine.siem_rules import SignatureRuleEngine
+from services.alert_broadcast import alert_hub
+from services.incident_service import IncidentService
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +94,7 @@ def _threat_score(
 
 class PacketService:
     """
-    Wraps CyberSentinelPacketClassifier for use in FastAPI route handlers.
+    Wraps the loaded packet classifier for use in FastAPI route handlers.
 
     Usage:
         service = PacketService(registry=request.app.state.models, db=db)
@@ -99,6 +106,7 @@ class PacketService:
         self.db = db
         self.user_id = user_id
         self.rule_engine = SOCRuleEngine()
+        self.signature_engine = SignatureRuleEngine()
         self.fusion_engine = SOCFusionEngine()
 
     # ------------------------------------------------------------------
@@ -107,37 +115,41 @@ class PacketService:
 
     async def classify_single(
         self,
-        flow: FlowFeatures,
-        model_type: str | None = None,
+        flow: FlowInput,
     ) -> PacketClassifyResponse:
         """Classify one flow and persist the result."""
-        classifier = self.registry.require_packet_classifier(model_type)
+        classifier = self.registry.require_packet_classifier()
         df = _flows_to_dataframe([flow])
         packet_detector = self.registry.get_packet_anomaly_detector()
 
-        logger.debug("Classifying single flow from src_ip={} with hybrid SOC pipeline", flow.src_ip)
-        rf_task = asyncio.to_thread(classifier.predict, df)
+        logger.debug("Classifying single flow from src_ip={} with hybrid SOC pipeline", flow.source_ip)
+        ml_model = _active_ml_model(self.registry)
+        ml_task = asyncio.to_thread(classifier.predict, df)
         packet_task = (
             asyncio.to_thread(packet_detector.predict, df)
             if packet_detector is not None
             else asyncio.sleep(0, result=_empty_packet_anomaly_df(df))
         )
         raw_results, packet_results = await asyncio.gather(
-            rf_task,
+            ml_task,
             packet_task,
         )
-        firewall_signal = await self._latest_firewall_signal(flow.src_ip)
+        firewall_signal = await self._latest_firewall_signal(flow.source_ip)
         port_count = await self._recent_dst_port_count(flow)
 
         prediction = self._build_soc_prediction(
-            rf_row=raw_results.iloc[0],
+            ml_row=raw_results.iloc[0],
             packet_row=packet_results.iloc[0],
             firewall_signal=firewall_signal,
             port_count=port_count,
             flow=flow,
             packet_detector_available=packet_detector is not None,
+            features_df=df,
+            feature_row=0,
+            ml_model=ml_model,
         )
-        await self._save_event(prediction, flow)
+        event_id = await self._save_event(prediction, flow)
+        await self._post_classify_hooks(prediction, flow, event_id)
 
         return PacketClassifyResponse(
             success=True,
@@ -146,39 +158,43 @@ class PacketService:
 
     async def classify_batch(
         self,
-        flows: List[FlowFeatures],
+        flows: List[FlowInput],
         source: str = "batch",
-        model_type: str | None = None,
     ) -> PacketBatchResponse:
         """Classify a list of flows (CSV upload) and persist all results."""
-        classifier = self.registry.require_packet_classifier(model_type)
+        classifier = self.registry.require_packet_classifier()
         df = _flows_to_dataframe(flows)
         packet_detector = self.registry.get_packet_anomaly_detector()
 
         logger.info("Classifying batch of {} flows with hybrid SOC pipeline", len(flows))
-        rf_task = asyncio.to_thread(classifier.predict, df)
+        ml_model = _active_ml_model(self.registry)
+        ml_task = asyncio.to_thread(classifier.predict, df)
         packet_task = (
             asyncio.to_thread(packet_detector.predict, df)
             if packet_detector is not None
             else asyncio.sleep(0, result=_empty_packet_anomaly_df(df))
         )
-        raw_results, packet_results = await asyncio.gather(rf_task, packet_task)
+        raw_results, packet_results = await asyncio.gather(ml_task, packet_task)
         batch_port_counts = _batch_port_counts(flows)
 
         predictions: List[PacketPrediction] = []
         for pos, (_, row) in enumerate(raw_results.iterrows()):
             flow = flows[pos] if pos < len(flows) else None
-            firewall_signal = await self._latest_firewall_signal(flow.src_ip if flow else None)
-            port_count = batch_port_counts.get(flow.src_ip or "", 0) if flow else 0
+            firewall_signal = await self._latest_firewall_signal(flow.source_ip if flow else None)
+            port_count = batch_port_counts.get(flow.source_ip or "", 0) if flow else 0
             pred = self._build_soc_prediction(
-                rf_row=row,
+                ml_row=row,
                 packet_row=packet_results.iloc[pos],
                 firewall_signal=firewall_signal,
                 port_count=port_count,
                 flow=flow,
                 packet_detector_available=packet_detector is not None,
+                features_df=df,
+                feature_row=pos,
+                ml_model=ml_model,
             )
-            await self._save_event(pred, flow, source=source)
+            event_id = await self._save_event(pred, flow, source=source)
+            await self._post_classify_hooks(pred, flow, event_id)
             predictions.append(pred)
 
         # Flush all inserts in one commit via the session
@@ -252,18 +268,19 @@ class PacketService:
     async def _save_event(
         self,
         prediction: PacketPrediction,
-        flow: FlowFeatures | None,
+        flow: FlowInput | None,
         source: str = "single",
     ) -> str:
         """Persist one PacketPrediction to the packet_events table."""
         event = PacketEvent(
             user_id=self.user_id,
-            src_ip=flow.src_ip if flow else None,
-            dst_ip=flow.dst_ip if flow else None,
-            dst_port=flow.dst_port if flow else None,
+            src_ip=flow.source_ip if flow else None,
+            dst_ip=flow.dest_ip if flow else None,
+            dst_port=flow.dest_port if flow else None,
             protocol=flow.protocol if flow else None,
-            prediction=prediction.prediction,
-            confidence=prediction.rf_confidence,
+            prediction=prediction.soc_verdict,
+            raw_model_prediction=prediction.raw_model_prediction,
+            confidence=prediction.ml_confidence,
             prob_normal=prediction.prob_normal,
             prob_suspicious=prediction.prob_suspicious,
             prob_malicious=prediction.prob_malicious,
@@ -280,9 +297,44 @@ class PacketService:
         await self.db.refresh(event)
         return event.id
 
-    async def _latest_firewall_signal(self, src_ip: str | None) -> dict[str, float]:
+    async def _post_classify_hooks(
+        self,
+        prediction: PacketPrediction,
+        flow: FlowInput | None,
+        event_id: str,
+    ) -> None:
+        """Broadcast live alerts and auto-create incidents for high-risk flows."""
+        payload = {
+            "event_id": event_id,
+            "source_ip": flow.source_ip if flow else None,
+            "raw_model_prediction": prediction.raw_model_prediction,
+            "soc_verdict": prediction.soc_verdict,
+            "risk_score": prediction.risk_score,
+            "mitre_id": prediction.mitre_id,
+        }
+        await alert_hub.publish_threat(self.user_id, payload)
+        if prediction.risk_score >= 70.0 or prediction.soc_verdict == "Malicious":
+            await alert_hub.publish_critical_alert(self.user_id, payload)
+
+        if flow and flow.source_ip and prediction.risk_score >= settings.INCIDENT_AUTO_CREATE_THRESHOLD:
+            incidents = IncidentService(self.db, self.user_id)
+            await incidents.auto_create_from_threat(
+                attack_type=prediction.raw_model_prediction,
+                threat_score=prediction.risk_score,
+                source_ip=flow.source_ip,
+                destination_ip=flow.dest_ip,
+                evidence={
+                    "packet_event_id": event_id,
+                    "soc_verdict": prediction.soc_verdict,
+                    "triggered_rules": prediction.triggered_rules,
+                },
+                triggered_rules=prediction.triggered_rules,
+            )
+
+    async def _latest_firewall_signal(self, src_ip: str | None) -> dict[str, float | str]:
+        """Cross-signal from firewall monitor DB — not computed from the current packet flow."""
         if not src_ip:
-            return {"score": 0.0}
+            return {"score": 0.0, "source": "none"}
         query = (
             select(FirewallAlert)
             .where(FirewallAlert.user_id == self.user_id, FirewallAlert.src_ip == src_ip)
@@ -291,59 +343,71 @@ class PacketService:
         )
         row = (await self.db.execute(query)).scalar_one_or_none()
         if row is None:
-            return {"score": 0.0}
+            return {"score": 0.0, "source": "none"}
         score = float(row.anomaly_score or row.threat_score or 0.0)
-        return {"score": max(0.0, min(score, 100.0))}
+        return {"score": max(0.0, min(score, 100.0)), "source": "firewall_alert"}
 
-    async def _recent_dst_port_count(self, flow: FlowFeatures | None) -> int:
-        if flow is None or not flow.src_ip:
+    async def _recent_dst_port_count(self, flow: FlowInput | None) -> int:
+        if flow is None or not flow.source_ip:
             return 0
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
         query = select(PacketEvent.dst_port).where(
             PacketEvent.user_id == self.user_id,
-            PacketEvent.src_ip == flow.src_ip,
+            PacketEvent.src_ip == flow.source_ip,
             PacketEvent.timestamp >= cutoff,
         )
         ports = {port for port in (await self.db.execute(query)).scalars().all() if port is not None}
-        if flow.dst_port is not None:
-            ports.add(flow.dst_port)
+        if flow.dest_port is not None:
+            ports.add(flow.dest_port)
         return len(ports)
 
     def _build_soc_prediction(
         self,
         *,
-        rf_row: pd.Series,
+        ml_row: pd.Series,
         packet_row: pd.Series,
-        firewall_signal: dict[str, float],
+        firewall_signal: dict[str, float | str],
         port_count: int,
-        flow: FlowFeatures | None,
+        flow: FlowInput | None,
         packet_detector_available: bool,
+        features_df: pd.DataFrame | None = None,
+        feature_row: int = 0,
+        ml_model: str = "xgboost",
     ) -> PacketPrediction:
-        rf_prediction = _parse_prediction(rf_row)
-        rf_probabilities = _rf_probabilities(rf_prediction)
+        ml_prediction = _parse_prediction(ml_row, ml_model=ml_model)
+        ml_probabilities = _ml_probabilities(ml_prediction)
         packet_anomaly_score = _safe_float(packet_row.get("packet_anomaly_score")) or 0.0
         firewall_score = float(firewall_signal.get("score", 0.0) or 0.0)
+        firewall_source = str(firewall_signal.get("source", "none") or "none")
         packet_anomaly_level = _anomaly_level(packet_anomaly_score)
         firewall_anomaly_level = _anomaly_level(firewall_score)
 
         context = SOCRuleContext(
-            src_ip=flow.src_ip if flow else None,
+            src_ip=flow.source_ip if flow else None,
             distinct_dst_ports_short_window=port_count,
-            flow_duration=flow.flow_duration if flow else None,
+            flow_duration=flow.features.flow_duration if flow else None,
             total_packets=_total_packets(flow),
-            flow_packets_per_second=flow.flow_pkts_per_s if flow else None,
-            syn_count=float(flow.syn_flag_count or 0.0) if flow else 0.0,
-            ack_count=float(flow.ack_flag_count or 0.0) if flow else 0.0,
-            rf_prediction=rf_prediction.prediction,
-            rf_max_probability=rf_prediction.rf_confidence,
-            rf_malicious_probability=rf_prediction.prob_malicious or 0.0,
+            flow_packets_per_second=flow.features.flow_packets_per_s if flow else None,
+            syn_count=float(flow.features.syn_flag_count or 0.0) if flow else 0.0,
+            ack_count=float(flow.features.ack_flag_count or 0.0) if flow else 0.0,
+            ml_prediction=ml_prediction.ml_prediction,
+            ml_max_probability=ml_prediction.ml_confidence,
+            ml_malicious_probability=ml_prediction.prob_malicious or 0.0,
             packet_anomaly_level=packet_anomaly_level,
             firewall_anomaly_level=firewall_anomaly_level,
         )
         rule_result = self.rule_engine.evaluate(context)
+        feature_dict = _feature_dict_for_row(features_df, feature_row)
+        if feature_dict is not None:
+            rule_result = self.rule_engine.merge_signature(
+                rule_result,
+                self.signature_engine.evaluate(feature_dict),
+            )
         decision = self.fusion_engine.decide(
             FusionInput(
-                rf_malicious_probability=rf_prediction.prob_malicious or 0.0,
+                ml_malicious_probability=ml_prediction.prob_malicious or 0.0,
+                ml_prediction=ml_prediction.ml_prediction,
+                ml_max_probability=ml_prediction.ml_confidence,
                 packet_anomaly_level=packet_anomaly_level,
                 packet_anomaly_score=packet_anomaly_score,
                 firewall_anomaly_level=firewall_anomaly_level,
@@ -355,12 +419,14 @@ class PacketService:
         )
 
         explanation = _build_explanation(
-            rf_prediction=rf_prediction,
+            ml_prediction=ml_prediction,
+            ml_model=ml_model,
             packet_anomaly_level=packet_anomaly_level,
             packet_anomaly_score=packet_anomaly_score,
             packet_detector_available=packet_detector_available,
             firewall_anomaly_level=firewall_anomaly_level,
             firewall_anomaly_score=firewall_score,
+            firewall_signal_source=firewall_source,
             rule_explanations=rule_result.explanation,
         )
         final_prediction = decision.prediction
@@ -369,10 +435,15 @@ class PacketService:
         elif rule_result.force_prediction == "Suspicious" and final_prediction == "Normal":
             final_prediction = "Suspicious"
 
+        mitre_mapping = mitre_from_rules(rule_result.triggered_rules)
+        if mitre_mapping is None:
+            mitre_mapping = map_attack_to_mitre(ml_prediction.raw_model_prediction)
+
         logger.info(
-            "SOC packet decision src_ip={} rf={} packet_anomaly_level={} firewall_anomaly_level={} rules={} risk={} final={}",
-            flow.src_ip if flow else None,
-            rf_prediction.prediction,
+            "SOC packet decision src_ip={} ml_model={} ml={} packet_anomaly_level={} firewall_anomaly_level={} rules={} risk={} final={}",
+            flow.source_ip if flow else None,
+            ml_model,
+            ml_prediction.ml_prediction,
             packet_anomaly_level,
             firewall_anomaly_level,
             rule_result.triggered_rules,
@@ -380,16 +451,22 @@ class PacketService:
             final_prediction,
         )
 
-        return rf_prediction.model_copy(
+        return ml_prediction.model_copy(
             update={
                 "prediction": final_prediction,
+                "soc_verdict": final_prediction,
                 "risk_score": decision.risk_score,
-                "rf_prediction": rf_prediction.prediction,
-                "rf_probabilities": rf_probabilities,
+                "ml_model": ml_model,
+                "ml_prediction": ml_prediction.ml_prediction,
+                "ml_probabilities": ml_probabilities,
+                "mitre_id": mitre_mapping.mitre_id,
+                "mitre_technique": mitre_mapping.technique,
+                "mitre_tactic": mitre_mapping.tactic,
                 "packet_anomaly_level": packet_anomaly_level,
                 "packet_anomaly_score": round(packet_anomaly_score, 2),
                 "firewall_anomaly_level": firewall_anomaly_level,
                 "firewall_anomaly_score": round(firewall_score, 2),
+                "firewall_signal_source": firewall_source,
                 "triggered_rules": rule_result.triggered_rules,
                 "final_confidence": _final_confidence(final_prediction, decision.risk_score),
                 "explanation": explanation,
@@ -401,28 +478,19 @@ class PacketService:
 # Pure helper functions — no DB or ML state
 # ---------------------------------------------------------------------------
 
-def _flows_to_dataframe(flows: List[FlowFeatures]) -> pd.DataFrame:
-    """
-    Convert a list of FlowFeatures Pydantic objects into a DataFrame
-    using the CICIDS2017 column names the classifier expects.
+def _feature_dict_for_row(df: pd.DataFrame | None, row_index: int) -> dict[str, float] | None:
+    """Build canonical feature dict when coverage is sufficient for signature rules."""
+    if df is None or df.empty or row_index < 0 or row_index >= len(df):
+        return None
+    X, compat = flows_to_feature_matrix(df.iloc[[row_index]])
+    if compat.iloc[0]["feature_coverage"] < MIN_PRODUCTION_FEATURE_COVERAGE:
+        return None
+    return {name: float(X[0, idx]) for idx, name in enumerate(FEATURE_NAMES)}
 
-    model_dump(by_alias=True) produces keys like "Flow Duration" instead
-    of "flow_duration" because FlowFeatures uses alias= on each field.
-    Metadata-only fields (src_ip, dst_ip, etc.) are excluded because
-    they have no alias and the classifier ignores unknown columns anyway.
-    """
-    records = []
-    for flow in flows:
-        # by_alias=True gives us CICIDS2017 column names
-        record = flow.model_dump(by_alias=True, exclude_none=False)
-        # Remove display-only fields that aren't ML features
-        for meta_field in ("src_ip", "dst_ip", "dst_port", "protocol"):
-            record.pop(meta_field, None)
-        record = {
-            key: (None if _is_nan(value) else value)
-            for key, value in record.items()
-        }
-        records.append(record)
+
+def _flows_to_dataframe(flows: List[FlowInput]) -> pd.DataFrame:
+    """Build a DataFrame with exactly the 23 canonical feature columns."""
+    records = [flow.features.model_dump() for flow in flows]
     return pd.DataFrame(records)
 
 
@@ -437,13 +505,19 @@ def _empty_packet_anomaly_df(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _parse_prediction(row: pd.Series) -> PacketPrediction:
+def _active_ml_model(registry: ModelRegistry) -> str:
+    return "xgboost"
+
+
+def _parse_prediction(row: pd.Series, *, ml_model: str = "xgboost") -> PacketPrediction:
     """
     Convert one row from classifier.predict() output into a PacketPrediction.
     Handles missing probability columns gracefully.
     """
     prediction = str(row.get("prediction", "Normal"))
     confidence = _safe_float(row.get("confidence")) or 0.0
+    raw_model_prediction = str(row.get("raw_model_prediction", "Unknown"))
+    raw_model_confidence = _safe_float(row.get("raw_model_confidence")) or 0.0
 
     # Probability columns — present only if classifier supports predict_proba
     prob_normal = _safe_float(row.get("prob_Normal"))
@@ -458,6 +532,10 @@ def _parse_prediction(row: pd.Series) -> PacketPrediction:
     if traffic_schema == "insufficient-live-flow-features":
         prediction = "Insufficient Evidence"
         confidence = 0.0
+        raw_model_prediction = "Insufficient Evidence"
+        raw_model_confidence = 0.0
+
+    mitre_mapping = map_attack_to_mitre(raw_model_prediction)
 
     score = _threat_score(
         prediction,
@@ -469,10 +547,17 @@ def _parse_prediction(row: pd.Series) -> PacketPrediction:
 
     return PacketPrediction(
         prediction=prediction,
+        soc_verdict=prediction,
+        raw_model_prediction=raw_model_prediction,
+        raw_model_confidence=round(raw_model_confidence, 4),
         risk_score=score,
-        rf_prediction=prediction,
-        rf_confidence=round(confidence, 4),
-        rf_probabilities={
+        ml_model=ml_model,
+        ml_prediction=prediction,
+        ml_confidence=round(confidence, 4),
+        mitre_id=mitre_mapping.mitre_id,
+        mitre_technique=mitre_mapping.technique,
+        mitre_tactic=mitre_mapping.tactic,
+        ml_probabilities={
             key: value
             for key, value in {
                 "Normal": round(prob_normal, 4) if prob_normal is not None else None,
@@ -492,7 +577,7 @@ def _parse_prediction(row: pd.Series) -> PacketPrediction:
     )
 
 
-def _rf_probabilities(prediction: PacketPrediction) -> dict[str, float]:
+def _ml_probabilities(prediction: PacketPrediction) -> dict[str, float]:
     values = {
         "Normal": prediction.prob_normal,
         "Suspicious": prediction.prob_suspicious,
@@ -501,17 +586,17 @@ def _rf_probabilities(prediction: PacketPrediction) -> dict[str, float]:
     return {key: round(float(value), 4) for key, value in values.items() if value is not None}
 
 
-def _total_packets(flow: FlowFeatures | None) -> float:
+def _total_packets(flow: FlowInput | None) -> float:
     if flow is None:
         return 0.0
-    return float(flow.total_fwd_packets or 0.0) + float(flow.total_bwd_packets or 0.0)
+    return float(flow.features.total_fwd_packets or 0.0) + float(flow.features.total_bwd_packets or 0.0)
 
 
-def _batch_port_counts(flows: List[FlowFeatures]) -> dict[str, int]:
+def _batch_port_counts(flows: List[FlowInput]) -> dict[str, int]:
     ports_by_src: dict[str, set[int]] = {}
     for flow in flows:
-        if flow.src_ip and flow.dst_port is not None:
-            ports_by_src.setdefault(flow.src_ip, set()).add(flow.dst_port)
+        if flow.source_ip and flow.dest_port is not None:
+            ports_by_src.setdefault(flow.source_ip, set()).add(flow.dest_port)
     return {src_ip: len(ports) for src_ip, ports in ports_by_src.items()}
 
 
@@ -544,22 +629,35 @@ def _anomaly_level(score: float) -> str:
 
 def _build_explanation(
     *,
-    rf_prediction: PacketPrediction,
+    ml_prediction: PacketPrediction,
+    ml_model: str,
     packet_anomaly_level: str,
     packet_anomaly_score: float,
     packet_detector_available: bool,
     firewall_anomaly_level: str,
     firewall_anomaly_score: float,
+    firewall_signal_source: str,
     rule_explanations: list[str],
 ) -> list[str]:
-    confidence_label = "high" if rf_prediction.rf_confidence >= 0.60 else "low"
+    model_label = ml_model.upper() if ml_model == "xgboost" else ml_model.replace("_", " ").title()
+    confidence_label = "high" if ml_prediction.ml_confidence >= 0.60 else "low"
     ml_reason = (
-        "ML Reasoning: Random Forest classified the flow as "
-        f"{rf_prediction.prediction} with {confidence_label} confidence."
+        f"ML Reasoning: {model_label} classified the flow as "
+        f"{ml_prediction.ml_prediction} with {confidence_label} confidence."
     )
 
     packet_reason = _anomaly_range_reason("Packet anomaly", packet_anomaly_score, packet_anomaly_level)
-    firewall_reason = _anomaly_range_reason("Firewall behavior", firewall_anomaly_score, firewall_anomaly_level)
+    if firewall_signal_source == "firewall_alert":
+        firewall_reason = _anomaly_range_reason(
+            "Firewall behavior (from stored firewall alert for this IP)",
+            firewall_anomaly_score,
+            firewall_anomaly_level,
+        )
+    else:
+        firewall_reason = (
+            "Firewall behavior is Normal (no stored firewall alert for this source IP — "
+            "packet classification does not analyze firewall logs directly)."
+        )
     gray_zone_reasons: list[str] = []
     if packet_anomaly_level == "Suspicious":
         gray_zone_reasons.append("packet anomaly score")

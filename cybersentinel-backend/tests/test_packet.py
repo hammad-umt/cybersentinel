@@ -19,7 +19,7 @@ from tests.helpers import (
 @pytest.mark.asyncio
 async def test_tc_pkt_01_classify_requires_authentication(client: AsyncClient):
     """TC-PKT-01: POST /packet/classify without JWT must return 401."""
-    response = await client.post("/api/v1/packet/classify", json={"flow": SAMPLE_FLOW})
+    response = await client.post("/api/v1/packet/classify", json=SAMPLE_FLOW)
     assert_failure_status(response.status_code, 401)
 
 
@@ -32,7 +32,7 @@ async def test_tc_pkt_02_classify_valid_flow_returns_prediction(
     response = await client.post(
         "/api/v1/packet/classify",
         headers=admin_headers,
-        json={"flow": SAMPLE_FLOW},
+        json=SAMPLE_FLOW,
     )
     assert_failure_status(response.status_code, 200, response.text)
     body = response.json()
@@ -50,14 +50,15 @@ async def test_tc_pkt_03_classify_sparse_flow_marks_insufficient_rf_evidence(
     response = await client.post(
         "/api/v1/packet/classify",
         headers=admin_headers,
-        json={"flow": SPARSE_FLOW},
+        json=SPARSE_FLOW,
     )
     assert_failure_status(response.status_code, 200, response.text)
     result = response.json()["result"]
-    assert result["rf_prediction"] == "Insufficient Evidence"
+    assert result["ml_prediction"] == "Insufficient Evidence"
+    assert result["ml_model"] == "xgboost"
     assert result["prediction"] == "Suspicious"
     assert result["risk_score"] == 40.0
-    assert "RF weak confidence" in result["triggered_rules"]
+    assert "ML weak confidence" in result["triggered_rules"]
 
 
 @pytest.mark.asyncio
@@ -66,7 +67,7 @@ async def test_tc_pkt_04_events_list_paginated(client: AsyncClient, admin_header
     await client.post(
         "/api/v1/packet/classify",
         headers=admin_headers,
-        json={"flow": SAMPLE_FLOW},
+        json=SAMPLE_FLOW,
     )
     response = await client.get("/api/v1/packet/events", headers=admin_headers)
     assert_failure_status(response.status_code, 200)
@@ -74,6 +75,27 @@ async def test_tc_pkt_04_events_list_paginated(client: AsyncClient, admin_header
     assert_success(body)
     assert body["total"] >= 1
     assert isinstance(body["events"], list)
+
+
+@pytest.mark.asyncio
+async def test_tc_pkt_08_classify_rejects_unknown_feature_keys(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+):
+    """TC-PKT-08: Extra CICIDS columns in features must return HTTP 422."""
+    bad = {
+        **SAMPLE_FLOW,
+        "features": {
+            **SAMPLE_FLOW["features"],
+            "Packet Length Mean": 768.5,
+        },
+    }
+    response = await client.post(
+        "/api/v1/packet/classify",
+        headers=admin_headers,
+        json=bad,
+    )
+    assert_failure_status(response.status_code, 422, response.text)
 
 
 @pytest.mark.asyncio

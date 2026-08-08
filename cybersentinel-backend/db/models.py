@@ -78,6 +78,8 @@ class PacketEvent(Base):
         String(32), index=True, nullable=False
     )  # Normal | Suspicious | Malicious | Insufficient Evidence
 
+    raw_model_prediction: Mapped[str | None] = mapped_column(String(32), index=True)
+
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     prob_normal: Mapped[float | None] = mapped_column(Float)
     prob_suspicious: Mapped[float | None] = mapped_column(Float)
@@ -367,4 +369,106 @@ class UserConfiguration(Base):
     theme_preference: Mapped[str] = mapped_column(String(8), default="Dark")
     background_monitoring: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[str] = mapped_column(String(32), default=_now_utc, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Table 8 — Security Incidents
+# ---------------------------------------------------------------------------
+
+class Incident(Base):
+    __tablename__ = "incidents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    timestamp: Mapped[str] = mapped_column(String(32), default=_now_utc, index=True, nullable=False)
+
+    attack_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), index=True, nullable=False)
+    source_ip: Mapped[str | None] = mapped_column(String(45), index=True)
+    destination_ip: Mapped[str | None] = mapped_column(String(45))
+    threat_score: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(
+        String(20), default="Open", index=True, nullable=False
+    )  # Open | Investigating | Resolved | Closed
+
+    mitre_id: Mapped[str | None] = mapped_column(String(16))
+    mitre_technique: Mapped[str | None] = mapped_column(String(128))
+    mitre_tactic: Mapped[str | None] = mapped_column(String(64))
+
+    evidence_json: Mapped[str | None] = mapped_column(Text)
+    title: Mapped[str | None] = mapped_column(String(256))
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        Index("ix_incidents_user_timestamp", "user_id", "timestamp"),
+        Index("ix_incidents_user_status", "user_id", "status"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Table 9 — Threat Score History
+# ---------------------------------------------------------------------------
+
+class ThreatScoreHistory(Base):
+    __tablename__ = "threat_score_history"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    timestamp: Mapped[str] = mapped_column(String(32), default=_now_utc, index=True, nullable=False)
+
+    ip_address: Mapped[str] = mapped_column(String(45), index=True, nullable=False)
+    threat_score: Mapped[float] = mapped_column(Float, nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    packet_score: Mapped[float] = mapped_column(Float, default=0.0)
+    firewall_score: Mapped[float] = mapped_column(Float, default=0.0)
+    ip_reputation_score: Mapped[float] = mapped_column(Float, default=0.0)
+    virustotal_score: Mapped[float] = mapped_column(Float, default=0.0)
+    rule_score: Mapped[float] = mapped_column(Float, default=0.0)
+
+    attack_type: Mapped[str | None] = mapped_column(String(64))
+    mitre_id: Mapped[str | None] = mapped_column(String(16))
+    evidence_json: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        Index("ix_threat_score_history_user_ip_ts", "user_id", "ip_address", "timestamp"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Table 10 — Monitoring Agents
+# ---------------------------------------------------------------------------
+
+class MonitoringAgent(Base):
+    __tablename__ = "monitoring_agents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    hostname: Mapped[str] = mapped_column(String(128), nullable=False)
+    api_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    last_seen: Mapped[str | None] = mapped_column(String(32))
+    registered_at: Mapped[str] = mapped_column(String(32), default=_now_utc, nullable=False)
+    metadata_json: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        Index("ix_monitoring_agents_user_agent", "user_id", "agent_id", unique=True),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Table 11 — Agent Telemetry (audit trail)
+# ---------------------------------------------------------------------------
+
+class AgentTelemetry(Base):
+    __tablename__ = "agent_telemetry"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    timestamp: Mapped[str] = mapped_column(String(32), default=_now_utc, index=True, nullable=False)
+    telemetry_type: Mapped[str] = mapped_column(String(32), nullable=False)  # packet | firewall
+    payload_json: Mapped[str | None] = mapped_column(Text)
+    processed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 

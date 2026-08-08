@@ -24,7 +24,9 @@ async def test_tc_thr_02_score_returns_unified_fields(client: AsyncClient, admin
     assert_success(body)
     assert body["ip"] == "8.8.8.8"
     assert 0 <= body["final_score"] <= 100
-    assert body["severity"] in {"Low", "Medium", "High", "Critical"}
+    assert body["severity"] in {"Safe", "Low", "Medium", "High", "Critical"}
+    assert body["risk_level"] in {"Safe", "Low", "Medium", "High", "Critical"}
+    assert "threat_score" in body
 
 
 @pytest.mark.asyncio

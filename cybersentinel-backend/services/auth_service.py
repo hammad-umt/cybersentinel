@@ -87,6 +87,12 @@ async def create_user(
     password: str,
     role: str = "Analyst",
 ) -> User:
+    from core.config import settings
+    from core.password_policy import validate_password_strength
+
+    if not settings.DEBUG:
+        validate_password_strength(password)
+
     normalized = email.strip().lower()
     existing = await get_user_by_email(db, normalized)
     if existing:
@@ -151,6 +157,12 @@ async def validate_password_reset_token(db: AsyncSession, token: str) -> bool:
 
 
 async def reset_password_with_token(db: AsyncSession, token: str, new_password: str) -> bool:
+    from core.config import settings
+    from core.password_policy import validate_password_strength
+
+    if not settings.DEBUG:
+        validate_password_strength(new_password)
+
     token_hash = _hash_reset_token(token)
     result = await db.execute(select(User).where(User.password_reset_token_hash == token_hash))
     user = result.scalar_one_or_none()
@@ -180,10 +192,25 @@ async def ensure_default_admin(db: AsyncSession) -> None:
     if count.scalar_one_or_none() is not None:
         return
 
+    from core.config import settings
+    import secrets
+
     admin_email = settings.default_admin_email
+    admin_password = settings.DEFAULT_ADMIN_PASSWORD
+    if not settings.DEBUG and admin_password in {"admin123", "changeme", "password"}:
+        admin_password = secrets.token_urlsafe(16) + "!Aa1"
+        from loguru import logger
+
+        logger.warning(
+            "Generated one-time default admin password for '{email}': {password} "
+            "(change immediately after first login)",
+            email=admin_email,
+            password=admin_password,
+        )
+
     admin = User(
         email=admin_email,
-        password_hash=hash_password(settings.DEFAULT_ADMIN_PASSWORD),
+        password_hash=hash_password(admin_password),
         role="Administrator",
     )
     db.add(admin)

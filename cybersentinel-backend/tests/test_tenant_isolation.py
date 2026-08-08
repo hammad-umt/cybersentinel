@@ -34,7 +34,7 @@ async def test_tc_tenant_02_user_cannot_see_other_users_packets(
     create = await client.post(
         "/api/v1/packet/classify",
         headers=admin_headers,
-        json={"flow": SAMPLE_FLOW},
+        json=SAMPLE_FLOW,
     )
     assert_failure_status(create.status_code, 200, create.text)
 
@@ -56,7 +56,7 @@ async def test_tc_tenant_03_user_cannot_acknowledge_other_users_alert(
     classify = await client.post(
         "/api/v1/packet/classify",
         headers=admin_headers,
-        json={"flow": SAMPLE_FLOW},
+        json=SAMPLE_FLOW,
     )
     assert_failure_status(classify.status_code, 200)
 

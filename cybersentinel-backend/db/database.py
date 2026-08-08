@@ -107,6 +107,9 @@ async def _ensure_sqlite_migrations(conn) -> None:
             "asn": "VARCHAR(16)",
             "as_org": "VARCHAR(256)",
         },
+        "packet_events": {
+            "raw_model_prediction": "VARCHAR(32)",
+        },
     }
     for table, defs in columns.items():
         existing = await conn.execute(text(f"PRAGMA table_info({table})"))
@@ -160,6 +163,11 @@ async def _ensure_postgres_migrations(conn) -> None:
             "asn": "VARCHAR(16)",
             "as_org": "VARCHAR(256)",
         },
+    )
+    await _ensure_postgres_table_columns(
+        conn,
+        "packet_events",
+        {"raw_model_prediction": "VARCHAR(32)"},
     )
 
     result = await conn.execute(

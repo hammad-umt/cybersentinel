@@ -118,6 +118,84 @@ class ReportService:
         doc.build(story)
         return buffer.getvalue()
 
+    async def incident_pdf(self, incident_id: str) -> bytes | None:
+        from services.incident_service import IncidentService
+
+        incident = await IncidentService(self.db, self.user_id).get(incident_id)
+        if incident is None:
+            return None
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.6 * inch, bottomMargin=0.6 * inch)
+        styles = getSampleStyleSheet()
+        story = []
+
+        story.append(Paragraph("CyberSentinel Incident Forensic Report", styles["Title"]))
+        story.append(Paragraph(f"Incident ID: {incident.id}", styles["Normal"]))
+        story.append(Paragraph(f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}", styles["Normal"]))
+        story.append(Spacer(1, 0.2 * inch))
+
+        rows = [
+            ["Field", "Value"],
+            ["Attack Type", incident.attack_type],
+            ["Severity", incident.severity],
+            ["Status", incident.status],
+            ["Source IP", incident.source_ip or "—"],
+            ["Destination IP", incident.destination_ip or "—"],
+            ["Threat Score", f"{incident.threat_score:.1f}"],
+            ["MITRE ID", incident.mitre_id or "—"],
+            ["MITRE Technique", incident.mitre_technique or "—"],
+            ["MITRE Tactic", incident.mitre_tactic or "—"],
+            ["Created", incident.timestamp],
+        ]
+        story.append(_styled_table(rows))
+        story.append(Spacer(1, 0.2 * inch))
+
+        story.append(Paragraph("Recommended Response", styles["Heading2"]))
+        recommendations = _incident_recommendations(incident.severity, incident.attack_type)
+        for rec in recommendations:
+            story.append(Paragraph(f"• {rec}", styles["Normal"]))
+        story.append(Spacer(1, 0.2 * inch))
+
+        story.append(Paragraph("Evidence", styles["Heading2"]))
+        evidence = incident.evidence or {}
+        for key, value in list(evidence.items())[:20]:
+            story.append(Paragraph(f"{key}: {value}", styles["Normal"]))
+
+        doc.build(story)
+        return buffer.getvalue()
+
+    async def incident_csv(self, incident_id: str) -> str | None:
+        from services.incident_service import IncidentService
+        import csv
+
+        incident = await IncidentService(self.db, self.user_id).get(incident_id)
+        if incident is None:
+            return None
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["field", "value"])
+        for field, value in incident.model_dump().items():
+            if field != "evidence":
+                writer.writerow([field, value])
+        for key, value in (incident.evidence or {}).items():
+            writer.writerow([f"evidence.{key}", value])
+        return output.getvalue()
+
+
+def _incident_recommendations(severity: str, attack_type: str) -> list[str]:
+    recs = []
+    if severity in {"Critical", "High"}:
+        recs.append("Block or quarantine the source IP via Threat Response Center.")
+        recs.append("Enrich IP reputation and review firewall alerts for the same host.")
+    if attack_type in {"DDoS", "DoS", "SYN Flood"}:
+        recs.append("Apply rate limiting and verify upstream DDoS mitigation.")
+    if attack_type in {"Brute Force", "PortScan", "Port Scan"}:
+        recs.append("Review authentication logs and restrict exposed services.")
+    if not recs:
+        recs.append("Continue monitoring and document findings in the incident notes.")
+    return recs
+
 
 def _styled_table(rows: list[list[str]]) -> Table:
     table = Table(rows, repeatRows=1)

@@ -15,7 +15,12 @@ os.environ.setdefault("RESEND_API_KEY", "")
 os.environ.setdefault("SMTP_HOST", "")
 os.environ.setdefault("SMTP_FROM_EMAIL", "")
 os.environ.setdefault("DEBUG", "true")
-os.environ.setdefault("RATE_LIMIT_PER_MINUTE", "1000")
+os.environ.setdefault("RATE_LIMIT_PER_MINUTE", "0")
+os.environ.setdefault("FUSION_WEIGHT_PACKET", "0.30")
+os.environ.setdefault("FUSION_WEIGHT_FIREWALL", "0.25")
+os.environ.setdefault("FUSION_WEIGHT_IP_REPUTATION", "0.20")
+os.environ.setdefault("FUSION_WEIGHT_VIRUSTOTAL", "0.15")
+os.environ.setdefault("FUSION_WEIGHT_RULES", "0.10")
 
 from core.config import get_settings
 
@@ -32,9 +37,9 @@ from tests.fakes import build_test_registry
 ADMIN_EMAIL = "admin@cybersentinel.local"
 ADMIN_PASSWORD = "admin123"
 ANALYST_EMAIL = "analyst@example.com"
-ANALYST_PASSWORD = "securepass123"
+ANALYST_PASSWORD = "SecurePass123!Aa"
 MANAGER_EMAIL = "manager@example.com"
-MANAGER_PASSWORD = "securepass123"
+MANAGER_PASSWORD = "SecurePass123!Aa"
 
 
 @pytest.fixture(autouse=True)
