@@ -1,0 +1,261 @@
+{
+  "supervised": {
+    "accuracy": 0.9400067695245866,
+    "precision_macro": 0.6099594383819359,
+    "recall_macro": 0.9685949329622269,
+    "f1_macro": 0.6482150504382659,
+    "precision_weighted": 0.9814399057209572,
+    "recall_weighted": 0.9400067695245866,
+    "f1_weighted": 0.9571702503619192,
+    "confusion_matrix": [
+      [
+        308212,
+        50,
+        5481,
+        145,
+        8313,
+        8620,
+        3767
+      ],
+      [
+        13,
+        25591,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        163,
+        0,
+        50289,
+        3,
+        0,
+        1,
+        79
+      ],
+      [
+        3,
+        0,
+        8,
+        31774,
+        0,
+        0,
+        1
+      ],
+      [
+        12,
+        0,
+        0,
+        0,
+        388,
+        0,
+        0
+      ],
+      [
+        7,
+        0,
+        0,
+        0,
+        0,
+        2698,
+        62
+      ],
+      [
+        6,
+        0,
+        1,
+        0,
+        0,
+        28,
+        401
+      ]
+    ],
+    "confusion_matrix_labels": [
+      "Benign",
+      "DDoS",
+      "DoS",
+      "PortScan",
+      "Bot",
+      "Brute Force",
+      "Web Attack"
+    ],
+    "classes_in_dataset": {
+      "present_class_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "present_class_names": [
+        "Benign",
+        "DDoS",
+        "DoS",
+        "PortScan",
+        "Bot",
+        "Brute Force",
+        "Web Attack"
+      ],
+      "missing_class_names": []
+    },
+    "classification_report": {
+      "Benign": {
+        "precision": 0.9993385557169537,
+        "recall": 0.9211687209344029,
+        "f1-score": 0.9586627765923695,
+        "support": 334588.0
+      },
+      "DDoS": {
+        "precision": 0.998049998049998,
+        "recall": 0.9994532317906659,
+        "f1-score": 0.9987511220387932,
+        "support": 25605.0
+      },
+      "DoS": {
+        "precision": 0.9015596988167802,
+        "recall": 0.9951320866726031,
+        "f1-score": 0.9460377181018671,
+        "support": 50535.0
+      },
+      "PortScan": {
+        "precision": 0.9953636990163524,
+        "recall": 0.9996224753035928,
+        "f1-score": 0.997488541470459,
+        "support": 31786.0
+      },
+      "Bot": {
+        "precision": 0.044592575566026894,
+        "recall": 0.97,
+        "f1-score": 0.08526535545544446,
+        "support": 400.0
+      },
+      "Brute Force": {
+        "precision": 0.23777209835198732,
+        "recall": 0.9750632453921214,
+        "f1-score": 0.38231543148646735,
+        "support": 2767.0
+      },
+      "Web Attack": {
+        "precision": 0.09303944315545244,
+        "recall": 0.9197247706422018,
+        "f1-score": 0.16898440792246103,
+        "support": 436.0
+      },
+      "accuracy": 0.9400067695245866,
+      "macro avg": {
+        "precision": 0.6099594383819359,
+        "recall": 0.9685949329622269,
+        "f1-score": 0.6482150504382659,
+        "support": 446117.0
+      },
+      "weighted avg": {
+        "precision": 0.9814399057209572,
+        "recall": 0.9400067695245866,
+        "f1-score": 0.9571702503619192,
+        "support": 446117.0
+      }
+    },
+    "roc_auc_macro": 0.9983327719265527,
+    "roc_auc_weighted": 0.9979898366161977,
+    "roc_auc_per_class": {
+      "Benign": 0.997505878485687,
+      "DDoS": 0.9999991778742872,
+      "DoS": 0.9989678959985204,
+      "PortScan": 0.9999230462977409,
+      "Bot": 0.9965147167373019,
+      "Brute Force": 0.9981772255940282,
+      "Web Attack": 0.9972414624983035
+    },
+    "binary_attack_detection": {
+      "true_positives": 111325,
+      "true_negatives": 308212,
+      "false_positives": 26376,
+      "false_negatives": 204,
+      "false_positive_rate": 0.0788,
+      "false_negative_rate": 0.0018,
+      "true_positive_rate": 0.9982,
+      "specificity": 0.9212,
+      "precision_attack": 0.8085,
+      "recall_attack": 0.9982,
+      "roc_auc": 0.9975058763954456
+    },
+    "model_type": "xgboost"
+  },
+  "unsupervised": {
+    "model_type": "isolation_forest",
+    "trained_on_benign_samples": 1338350,
+    "contamination": 0.15,
+    "true_positives": 51151,
+    "true_negatives": 284340,
+    "false_positives": 50248,
+    "false_negatives": 60378,
+    "false_positive_rate": 0.1502,
+    "false_negative_rate": 0.5414,
+    "true_positive_rate": 0.4586,
+    "specificity": 0.8498,
+    "precision": 0.5045,
+    "recall": 0.4586,
+    "roc_auc": 0.7404726161499663
+  },
+  "preprocessing": {
+    "original_distribution": {
+      "Benign": 2273097,
+      "DDoS": 128027,
+      "DoS": 252672,
+      "PortScan": 158930,
+      "Bot": 2002,
+      "Brute Force": 13835,
+      "Web Attack": 2180
+    },
+    "balanced_distribution": {
+      "Benign": 1672938,
+      "DDoS": 128027,
+      "DoS": 252672,
+      "PortScan": 158930,
+      "Bot": 2002,
+      "Brute Force": 13835,
+      "Web Attack": 2180
+    },
+    "class_weights": {
+      "0": 0.19047622605660489,
+      "1": 2.48895605575811,
+      "2": 1.2611439624752379,
+      "3": 2.00500107864199,
+      "4": 159.12850008917425,
+      "5": 23.032513294439568,
+      "6": 146.1719364351245
+    },
+    "train_samples": 1784467,
+    "test_samples": 446117,
+    "benign_max_ratio": 3.0,
+    "feature_names": [
+      "flow_duration",
+      "total_fwd_packets",
+      "total_bwd_packets",
+      "total_length_fwd",
+      "total_length_bwd",
+      "fwd_packet_length_max",
+      "bwd_packet_length_max",
+      "flow_bytes_per_s",
+      "flow_packets_per_s",
+      "flow_iat_mean",
+      "flow_iat_std",
+      "fwd_iat_mean",
+      "bwd_iat_mean",
+      "syn_flag_count",
+      "ack_flag_count",
+      "fin_flag_count",
+      "rst_flag_count",
+      "psh_flag_count",
+      "urg_flag_count",
+      "down_up_ratio",
+      "avg_packet_size",
+      "unique_dest_ports",
+      "failed_connections"
+    ]
+  }
+}

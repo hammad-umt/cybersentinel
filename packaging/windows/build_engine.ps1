@@ -141,10 +141,18 @@ New-Item -ItemType Directory -Force -Path $modelsDest | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $destUnsupervised "models") | Out-Null
 
 if (Test-Path $SupervisedModels) {
-    Copy-Item -Path (Join-Path $SupervisedModels "*") -Destination $modelsDest -Recurse -Force
-}
-if (Test-Path (Join-Path $RepoRoot "supervised_learning\model.py")) {
-    Copy-Item -Path (Join-Path $RepoRoot "supervised_learning\model.py") -Destination $destSupervised -Force
+    $xgbArtifacts = @(
+        "supervised_model.joblib",
+        "unsupervised_model.joblib",
+        "scaler.joblib",
+        "training_report.json"
+    )
+    foreach ($name in $xgbArtifacts) {
+        $src = Join-Path $SupervisedModels $name
+        if (Test-Path $src) {
+            Copy-Item -Path $src -Destination $modelsDest -Force
+        }
+    }
 }
 if (Test-Path $UnsupervisedModels) {
     Copy-Item -Path (Join-Path $UnsupervisedModels "*") -Destination (Join-Path $destUnsupervised "models") -Recurse -Force

@@ -38,10 +38,9 @@ fi
 echo "==> Copying ML models..."
 mkdir -p "$DIST_DIR/supervised_learning/models" "$DIST_DIR/unsupervised_learning/models"
 if [[ -d "$SUPERVISED_MODELS" ]]; then
-  cp -a "$SUPERVISED_MODELS/." "$DIST_DIR/supervised_learning/models/"
-fi
-if [[ -f "$REPO_ROOT/supervised_learning/model.py" ]]; then
-  cp "$REPO_ROOT/supervised_learning/model.py" "$DIST_DIR/supervised_learning/"
+  for name in supervised_model.joblib unsupervised_model.joblib scaler.joblib training_report.json; do
+    [[ -f "$SUPERVISED_MODELS/$name" ]] && cp "$SUPERVISED_MODELS/$name" "$DIST_DIR/supervised_learning/models/"
+  done
 fi
 if [[ -d "$UNSUPERVISED_MODELS" ]]; then
   cp -a "$UNSUPERVISED_MODELS/." "$DIST_DIR/unsupervised_learning/models/"

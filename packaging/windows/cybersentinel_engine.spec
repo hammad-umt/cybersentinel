@@ -6,7 +6,7 @@ Output: packaging/windows/dist/CyberSentinelEngine/
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
 SPEC_DIR = Path(SPECPATH).resolve()
 REPO_ROOT = SPEC_DIR.parent.parent
@@ -41,11 +41,20 @@ hiddenimports = [
     "scapy.layers.inet",
     "scapy.layers.l2",
     "scapy.sendrecv",
-    "scapy.arch.windows",
+    "ml_engine",
+    "ml_engine.xgb_classifier",
+    "ml_engine.column_mapping",
+    "ml_engine.features",
+    "ml_engine.siem_rules",
+    "xgboost",
+    "xgboost.sklearn",
 ]
 
 datas = collect_data_files("sklearn", include_py_files=False)
 datas += collect_data_files("scipy", include_py_files=False)
+datas += collect_data_files("xgboost", include_py_files=False)
+
+binaries = collect_dynamic_libs("xgboost")
 
 excludes = [
     "pytest",
@@ -65,7 +74,7 @@ excludes = [
 a = Analysis(
     [str(BACKEND / "engine_main.py")],
     pathex=[str(BACKEND), str(REPO_ROOT)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

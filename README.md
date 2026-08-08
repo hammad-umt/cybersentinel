@@ -28,7 +28,7 @@ Large datasets, local databases, virtual environments, `.env`, and generated mod
 
 To reproduce model artifacts:
 
-- Supervised: train using `supervised_learning/model.py`.
+- Supervised: train with `python scripts/train_models.py` (XGBoost + Isolation Forest).
 - Unsupervised: train using `unsupervised_learning/train.py`.
 
 If trained artifacts are needed in deployment, store them outside GitHub or use Git LFS/release assets.
