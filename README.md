@@ -1,20 +1,34 @@
-## CyberSentinel - Intelligent Network Security Dashboard
+# CyberSentinel
 
-A comprehensive cross-platform network security monitoring and analysis application built with Flutter, featuring real-time packet capture, IP intelligence, security alerts, and AI-powered threat analysis.
+**Intelligent Network Security Dashboard** - A comprehensive cross-platform network security monitoring and analysis application built with Flutter.
+
+## Features
+
+- 🔍 **Real-time Packet Capture & Analysis** - Monitor network traffic in real-time
+- 🌍 **IP Intelligence & Geolocation** - Analyze IP addresses with comprehensive threat intel
+- 🚨 **Security Alerts & Notifications** - Real-time alerts for suspicious network activities
+- 🦠 **Virus Scanner Integration** - Built-in malware detection capabilities
+- 📊 **SOC Dashboard** - Security Operations Center-style unified monitoring
+- 🤖 **AI-Powered Copilot Assistant** - Intelligent security threat analysis
+- 🖥️ **Multi-platform Support** - Windows, macOS, Linux, iOS, and Android
+- 🔐 **JWT Authentication** - Secure user authentication system
+- 🛡️ **Firewall Integration** - Active firewall status monitoring
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Project Structure](#project-structure)
+- [Technology Stack](#technology-stack)
+- [Requirements](#requirements)
+- [Installation & Setup](#installation--setup)
+- [Running the Application](#running-the-application)
+- [Build Automation](#build-automation)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Overview
 
-CyberSentinel is an enterprise-grade network security tool that provides:
-
-- **Real-time Packet Capture & Analysis** - Monitor network traffic in real-time
-- **IP Intelligence & Geolocation** - Analyze IP addresses with comprehensive threat intel
-- **Security Alerts & Notifications** - Real-time alerts for suspicious network activities
-- **Virus Scanner Integration** - Built-in malware detection capabilities
-- **SOC Dashboard** - Security Operations Center-style unified monitoring
-- **AI-Powered Copilot Assistant** - Intelligent security threat analysis
-- **Multi-platform Support** - Windows, macOS, Linux, iOS, and Android
-- **JWT Authentication** - Secure user authentication system
-- **Firewall Integration** - Active firewall status monitoring
+CyberSentinel is an enterprise-grade network security tool providing comprehensive monitoring, analysis, and threat detection capabilities across all major platforms. Whether you're a security professional, system administrator, or developer, CyberSentinel offers the tools you need for effective network defense.
 
 ## Project Structure
 
@@ -364,21 +378,20 @@ For issues, bug reports, or feature requests, please create an issue on GitHub.
 
 **Last Updated**: August 9, 2026
 
-For more information, visit the project repository: [GitHub Link] Desktop Based Application 
+**Repository**: [CyberSentinel on GitHub](https://github.com/hammad-umt/cybersentinel)
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## License
 
-A few resources to get you started if this is your first Flutter project:
+Proprietary - All Rights Reserved
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Support & Contact
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
-#   c y b e r s e n t i n e l 
+For issues, bug reports, or feature requests, please create an issue on GitHub.
+
+---
+
+**Built with ❤️ using Flutter**
  
  
