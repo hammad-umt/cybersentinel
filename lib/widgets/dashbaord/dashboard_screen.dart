@@ -25,6 +25,7 @@ class _DashboardContentState extends State<DashboardContent> {
   bool _loading = true;
   String? _error;
   Timer? _refreshTimer;
+  final ScrollController _scrollController = ScrollController();
 
   final List<_TrafficPoint> _trafficHistory = [];
   final _random = Random();
@@ -46,6 +47,7 @@ class _DashboardContentState extends State<DashboardContent> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -76,15 +78,18 @@ class _DashboardContentState extends State<DashboardContent> {
 
       setState(() {
         _summary = summary;
-        _topThreats = (threats['results'] as List? ?? []).cast<Map<String, dynamic>>();
+        _topThreats = (threats['results'] as List? ?? [])
+            .cast<Map<String, dynamic>>();
         _loading = false;
         _error = null;
 
-        _trafficHistory.add(_TrafficPoint(
-          normal: 5000 + _random.nextDouble() * 3000,
-          suspicious: 200 + _random.nextDouble() * 500,
-          malicious: 50 + _random.nextDouble() * 200,
-        ));
+        _trafficHistory.add(
+          _TrafficPoint(
+            normal: 5000 + _random.nextDouble() * 3000,
+            suspicious: 200 + _random.nextDouble() * 500,
+            malicious: 50 + _random.nextDouble() * 200,
+          ),
+        );
         if (_trafficHistory.length > 24) _trafficHistory.removeAt(0);
       });
     } catch (e) {
@@ -110,149 +115,218 @@ class _DashboardContentState extends State<DashboardContent> {
   Widget _buildDashboard() {
     final summary = _summary;
     if (summary == null) return const SizedBox.shrink();
-    final maxThreat = (summary['max_firewall_threat_score'] as num?)?.toDouble() ?? 73;
+    final maxThreat =
+        (summary['max_firewall_threat_score'] as num?)?.toDouble() ?? 73;
     final threatPercent = maxThreat.clamp(0, 100).toInt();
-    final recentAlerts = (summary['recent_alerts'] as List? ?? []).cast<Map<String, dynamic>>();
-    final protocols = (summary['protocol_distribution'] as List? ?? []).cast<Map<String, dynamic>>();
+    final recentAlerts = (summary['recent_alerts'] as List? ?? [])
+        .cast<Map<String, dynamic>>();
+    final protocols = (summary['protocol_distribution'] as List? ?? [])
+        .cast<Map<String, dynamic>>();
 
-    final activeThreats = (summary['unacknowledged_alerts'] as num?)?.toInt() ?? 23;
+    final activeThreats =
+        (summary['unacknowledged_alerts'] as num?)?.toInt() ?? 23;
     final packets = summary['packet_events'] ?? 2400000;
     final suspiciousIps = summary['firewall_alerts'] ?? 156;
     final criticalCount = summary['critical_alerts'] ?? 5;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(_pagePad),
-      child: Column(
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isDesktop = screenWidth >= 1200;
+    final isTablet = screenWidth >= 800 && screenWidth < 1200;
+
+    Widget buildKpis() {
+      final kpis = [
+        Expanded(child: FadeSlideIn(child: _ThreatScoreCard(score: threatPercent))),
+        Expanded(
+          child: FadeSlideIn(
+            delay: const Duration(milliseconds: 80),
+            child: _KpiCard(
+              icon: Icons.warning_amber_rounded,
+              iconColor: AppColors.red,
+              iconBg: AppColors.red.withValues(alpha: 0.1),
+              label: 'Active Threats',
+              value: activeThreats,
+              change: '+$criticalCount',
+              changeType: _ChangeType.negative,
+            ),
+          ),
+        ),
+        Expanded(
+          child: FadeSlideIn(
+            delay: const Duration(milliseconds: 160),
+            child: _KpiCard(
+              icon: Icons.show_chart_rounded,
+              iconColor: AppColors.blue,
+              iconBg: AppColors.blue.withValues(alpha: 0.1),
+              label: 'Packets Analyzed',
+              value: packets,
+              change: '+12.5%',
+              changeType: _ChangeType.neutral,
+              formatLarge: true,
+            ),
+          ),
+        ),
+        Expanded(
+          child: FadeSlideIn(
+            delay: const Duration(milliseconds: 240),
+            child: _KpiCard(
+              icon: Icons.language,
+              iconColor: AppColors.orange,
+              iconBg: AppColors.orange.withValues(alpha: 0.1),
+              label: 'Suspicious IPs',
+              value: suspiciousIps,
+              change: '-8',
+              changeType: _ChangeType.positive,
+            ),
+          ),
+        ),
+      ];
+
+      if (isDesktop) {
+        return SizedBox(
+          height: _kpiHeight,
+          child: Row(
+            children: [
+              kpis[0], const SizedBox(width: _gap),
+              kpis[1], const SizedBox(width: _gap),
+              kpis[2], const SizedBox(width: _gap),
+              kpis[3],
+            ],
+          ),
+        );
+      } else if (isTablet) {
+        return Column(
+          children: [
+            SizedBox(
+              height: _kpiHeight,
+              child: Row(children: [kpis[0], const SizedBox(width: _gap), kpis[1]]),
+            ),
+            const SizedBox(height: _gap),
+            SizedBox(
+              height: _kpiHeight,
+              child: Row(children: [kpis[2], const SizedBox(width: _gap), kpis[3]]),
+            ),
+          ],
+        );
+      } else {
+        return SizedBox(
+          height: _kpiHeight * 4 + _gap * 3,
+          child: Column(
+            children: [
+              kpis[0], const SizedBox(height: _gap),
+              kpis[1], const SizedBox(height: _gap),
+              kpis[2], const SizedBox(height: _gap),
+              kpis[3],
+            ],
+          ),
+        );
+      }
+    }
+
+    Widget buildMiddleRow() {
+      final traffic = FadeSlideIn(
+        delay: const Duration(milliseconds: 320),
+        child: _TrafficChart(history: _trafficHistory),
+      );
+      final alerts = FadeSlideIn(
+        delay: const Duration(milliseconds: 400),
+        child: _AlertsPanel(alerts: recentAlerts),
+      );
+
+      if (screenWidth >= 1024) {
+        return SizedBox(
+          height: _rowHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(flex: 2, child: traffic),
+              const SizedBox(width: _gap),
+              Expanded(child: alerts),
+            ],
+          ),
+        );
+      }
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          FadeSlideIn(
-            child: PageHeader(
-              title: 'Security overview',
-              subtitle: 'Real-time KPIs across packet events, firewall alerts, and threat scoring.',
-              icon: Icons.grid_view_rounded,
-              badge: 'Live',
-              actions: IconButton(
-                onPressed: _loadData,
-                tooltip: 'Refresh dashboard',
-                icon: Icon(Icons.refresh_rounded, color: AppColors.textMuted),
+          SizedBox(height: _rowHeight, child: traffic),
+          const SizedBox(height: _gap),
+          SizedBox(height: _rowHeight, child: alerts),
+        ],
+      );
+    }
+
+    Widget buildBottomRow() {
+      final donut = FadeSlideIn(
+        delay: const Duration(milliseconds: 480),
+        child: _PacketDonut(protocols: protocols),
+      );
+      final table = FadeSlideIn(
+        delay: const Duration(milliseconds: 560),
+        child: _MaliciousIPsTable(threats: _topThreats),
+      );
+
+      if (screenWidth >= 1024) {
+        return SizedBox(
+          height: _rowHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: donut),
+              const SizedBox(width: _gap),
+              Expanded(flex: 2, child: table),
+            ],
+          ),
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(height: _rowHeight, child: donut),
+          const SizedBox(height: _gap),
+          SizedBox(height: _rowHeight, child: table),
+        ],
+      );
+    }
+
+    return Scrollbar(
+      controller: _scrollController,
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        padding: const EdgeInsets.all(_pagePad),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FadeSlideIn(
+              child: PageHeader(
+                title: 'Security overview',
+                subtitle: 'Real-time KPIs across packet events, firewall alerts, and threat scoring.',
+                icon: Icons.grid_view_rounded,
+                badge: 'Live',
+                actions: IconButton(
+                  onPressed: _loadData,
+                  tooltip: 'Refresh dashboard',
+                  icon: Icon(Icons.refresh_rounded, color: AppColors.textMuted),
+                ),
               ),
             ),
-          ),
-          // Row 1 — 4 KPI cards (equal width, fixed height)
-          SizedBox(
-            height: _kpiHeight,
-            child: Row(
-              children: [
-                Expanded(
-                  child: FadeSlideIn(
-                    child: _ThreatScoreCard(score: threatPercent),
-                  ),
-                ),
-                const SizedBox(width: _gap),
-                Expanded(
-                  child: FadeSlideIn(
-                    delay: const Duration(milliseconds: 80),
-                    child: _KpiCard(
-                      icon: Icons.warning_amber_rounded,
-                      iconColor: AppColors.red,
-                      iconBg: AppColors.red.withValues(alpha: 0.1),
-                      label: 'Active Threats',
-                      value: activeThreats,
-                      change: '+$criticalCount',
-                      changeType: _ChangeType.negative,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: _gap),
-                Expanded(
-                  child: FadeSlideIn(
-                    delay: const Duration(milliseconds: 160),
-                    child: _KpiCard(
-                      icon: Icons.show_chart_rounded,
-                      iconColor: AppColors.blue,
-                      iconBg: AppColors.blue.withValues(alpha: 0.1),
-                      label: 'Packets Analyzed',
-                      value: packets,
-                      change: '+12.5%',
-                      changeType: _ChangeType.neutral,
-                      formatLarge: true,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: _gap),
-                Expanded(
-                  child: FadeSlideIn(
-                    delay: const Duration(milliseconds: 240),
-                    child: _KpiCard(
-                      icon: Icons.language,
-                      iconColor: AppColors.orange,
-                      iconBg: AppColors.orange.withValues(alpha: 0.1),
-                      label: 'Suspicious IPs',
-                      value: suspiciousIps,
-                      change: '-8',
-                      changeType: _ChangeType.positive,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          // Row 2 — Traffic 2/3 + Alerts 1/3
-          SizedBox(
-            height: _rowHeight,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: FadeSlideIn(
-                    delay: const Duration(milliseconds: 320),
-                    child: _TrafficChart(history: _trafficHistory),
-                  ),
-                ),
-                const SizedBox(width: _gap),
-                Expanded(
-                  child: FadeSlideIn(
-                    delay: const Duration(milliseconds: 400),
-                    child: _AlertsPanel(alerts: recentAlerts),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          // Row 3 — Donut 1/3 + Table 2/3
-          SizedBox(
-            height: _rowHeight,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: FadeSlideIn(
-                    delay: const Duration(milliseconds: 480),
-                    child: _PacketDonut(protocols: protocols),
-                  ),
-                ),
-                const SizedBox(width: _gap),
-                Expanded(
-                  flex: 2,
-                  child: FadeSlideIn(
-                    delay: const Duration(milliseconds: 560),
-                    child: _MaliciousIPsTable(threats: _topThreats),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+            buildKpis(),
+            const SizedBox(height: 24),
+            buildMiddleRow(),
+            const SizedBox(height: 24),
+            buildBottomRow(),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _TrafficPoint {
-  _TrafficPoint({required this.normal, required this.suspicious, required this.malicious});
+  _TrafficPoint({
+    required this.normal,
+    required this.suspicious,
+    required this.malicious,
+  });
   final double normal;
   final double suspicious;
   final double malicious;
@@ -346,7 +420,11 @@ class _ThreatScoreCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             'Threat Score',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 14, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const SizedBox(height: 16),
           AnimatedProgressBar(value: score / 100, color: _color, height: 8),
@@ -356,11 +434,19 @@ class _ThreatScoreCard extends StatelessWidget {
             children: [
               Text(
                 'Critical',
-                style: TextStyle(color: AppColors.textLabel, fontSize: 11, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                  color: AppColors.textLabel,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               Text(
                 _label,
-                style: TextStyle(color: _textColor, fontSize: 11, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: _textColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -392,10 +478,10 @@ class _KpiCard extends StatelessWidget {
   final bool formatLarge;
 
   Color get _changeColor => switch (changeType) {
-        _ChangeType.positive => AppColors.greenLight,
-        _ChangeType.negative => AppColors.redLight,
-        _ChangeType.neutral => AppColors.textMuted,
-      };
+    _ChangeType.positive => AppColors.greenLight,
+    _ChangeType.negative => AppColors.redLight,
+    _ChangeType.neutral => AppColors.textMuted,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -407,7 +493,10 @@ class _KpiCard extends StatelessWidget {
           Container(
             width: 48,
             height: 48,
-            decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(10)),
+            decoration: BoxDecoration(
+              color: iconBg,
+              borderRadius: BorderRadius.circular(10),
+            ),
             child: Icon(icon, color: iconColor, size: 24),
           ),
           const Spacer(),
@@ -416,7 +505,9 @@ class _KpiCard extends StatelessWidget {
             duration: const Duration(milliseconds: 1000),
             curve: Curves.easeOutCubic,
             builder: (_, v, _) {
-              final display = formatLarge ? _formatLarge(v) : v.round().toString();
+              final display = formatLarge
+                  ? _formatLarge(v)
+                  : v.round().toString();
               return Text(
                 display,
                 style: TextStyle(
@@ -431,7 +522,11 @@ class _KpiCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             label,
-            style: TextStyle(color: AppColors.textMuted, fontSize: 14, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const SizedBox(height: 6),
           Row(
@@ -441,11 +536,20 @@ class _KpiCard extends StatelessWidget {
               else if (changeType == _ChangeType.positive)
                 Icon(Icons.trending_down, size: 14, color: _changeColor),
               if (changeType != _ChangeType.neutral) const SizedBox(width: 4),
-              Text(change, style: TextStyle(color: _changeColor, fontSize: 12, fontWeight: FontWeight.w500)),
+              Text(
+                change,
+                style: TextStyle(
+                  color: _changeColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
               Text(
                 ' last hour',
                 style: TextStyle(
-                  color: changeType == _ChangeType.neutral ? AppColors.textLabel : AppColors.textLabel,
+                  color: changeType == _ChangeType.neutral
+                      ? AppColors.textLabel
+                      : AppColors.textLabel,
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
                 ),
@@ -471,11 +575,14 @@ class _TrafficChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final data = history.isEmpty
-        ? List.generate(12, (i) => _TrafficPoint(
+        ? List.generate(
+            12,
+            (i) => _TrafficPoint(
               normal: 5500 + sin(i * 0.8) * 1500 + 1500,
               suspicious: 400 + sin(i * 0.5) * 150,
               malicious: 80 + sin(i * 0.3) * 40,
-            ))
+            ),
+          )
         : history;
 
     return CyberCard(
@@ -491,12 +598,20 @@ class _TrafficChart extends StatelessWidget {
                   children: [
                     Text(
                       'Real-Time Network Traffic',
-                      style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     SizedBox(height: 4),
                     Text(
                       'Packets per 5-minute interval',
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
@@ -506,8 +621,14 @@ class _TrafficChart extends StatelessWidget {
                 runSpacing: 6,
                 children: [
                   _LegendDot(color: AppColors.chartNormal, label: 'Normal'),
-                  _LegendDot(color: AppColors.chartSuspicious, label: 'Suspicious'),
-                  _LegendDot(color: AppColors.chartMalicious, label: 'Malicious'),
+                  _LegendDot(
+                    color: AppColors.chartSuspicious,
+                    label: 'Suspicious',
+                  ),
+                  _LegendDot(
+                    color: AppColors.chartMalicious,
+                    label: 'Malicious',
+                  ),
                 ],
               ),
             ],
@@ -544,12 +665,19 @@ class _TrafficChart extends StatelessWidget {
                         interval: 2000,
                         getTitlesWidget: (v, _) => Text(
                           v.toInt().toString(),
-                          style: TextStyle(color: AppColors.textDim, fontSize: 11),
+                          style: TextStyle(
+                            color: AppColors.textDim,
+                            fontSize: 11,
+                          ),
                         ),
                       ),
                     ),
-                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
@@ -557,15 +685,24 @@ class _TrafficChart extends StatelessWidget {
                         interval: max(1, (data.length / 4).floorToDouble()),
                         getTitlesWidget: (v, _) {
                           final idx = v.toInt();
-                          if (idx < 0 || idx >= data.length) return const SizedBox.shrink();
-                          final t = DateTime.now().subtract(Duration(minutes: (data.length - idx) * 5));
-                          final h = t.hour > 12 ? t.hour - 12 : (t.hour == 0 ? 12 : t.hour);
+                          if (idx < 0 || idx >= data.length) {
+                            return const SizedBox.shrink();
+                          }
+                          final t = DateTime.now().subtract(
+                            Duration(minutes: (data.length - idx) * 5),
+                          );
+                          final h = t.hour > 12
+                              ? t.hour - 12
+                              : (t.hour == 0 ? 12 : t.hour);
                           final ampm = t.hour >= 12 ? 'PM' : 'AM';
                           return Padding(
                             padding: const EdgeInsets.only(top: 6),
                             child: Text(
                               '$h:${t.minute.toString().padLeft(2, '0')} $ampm',
-                              style: TextStyle(color: AppColors.textDim, fontSize: 10),
+                              style: TextStyle(
+                                color: AppColors.textDim,
+                                fontSize: 10,
+                              ),
                             ),
                           );
                         },
@@ -574,14 +711,26 @@ class _TrafficChart extends StatelessWidget {
                   ),
                   borderData: FlBorderData(show: false),
                   lineBarsData: [
-                    _line(data.map((e) => e.normal).toList(), AppColors.chartNormal),
-                    _line(data.map((e) => e.suspicious).toList(), AppColors.chartSuspicious),
-                    _line(data.map((e) => e.malicious).toList(), AppColors.chartMalicious),
+                    _line(
+                      data.map((e) => e.normal).toList(),
+                      AppColors.chartNormal,
+                    ),
+                    _line(
+                      data.map((e) => e.suspicious).toList(),
+                      AppColors.chartSuspicious,
+                    ),
+                    _line(
+                      data.map((e) => e.malicious).toList(),
+                      AppColors.chartMalicious,
+                    ),
                   ],
                   lineTouchData: LineTouchData(
                     touchTooltipData: LineTouchTooltipData(
                       getTooltipColor: (_) => const Color(0xFF0D1320),
-                      tooltipPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      tooltipPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
                       maxContentWidth: 220,
                       getTooltipItems: (touchedSpots) {
                         if (touchedSpots.isEmpty) return const [];
@@ -589,10 +738,15 @@ class _TrafficChart extends StatelessWidget {
                         final safeIdx = idx.clamp(0, data.length - 1);
                         final point = data[safeIdx];
 
-                        final t = DateTime.now().subtract(Duration(minutes: (data.length - safeIdx) * 5));
-                        final h = t.hour > 12 ? t.hour - 12 : (t.hour == 0 ? 12 : t.hour);
+                        final t = DateTime.now().subtract(
+                          Duration(minutes: (data.length - safeIdx) * 5),
+                        );
+                        final h = t.hour > 12
+                            ? t.hour - 12
+                            : (t.hour == 0 ? 12 : t.hour);
                         final ampm = t.hour >= 12 ? 'PM' : 'AM';
-                        final time = '$h:${t.minute.toString().padLeft(2, '0')} $ampm';
+                        final time =
+                            '$h:${t.minute.toString().padLeft(2, '0')} $ampm';
 
                         final normal = point.normal.round();
                         final suspicious = point.suspicious.round();
@@ -644,7 +798,10 @@ class _TrafficChart extends StatelessWidget {
                                 ? content
                                 : const LineTooltipItem(
                                     '',
-                                    TextStyle(fontSize: 0, color: Colors.transparent),
+                                    TextStyle(
+                                      fontSize: 0,
+                                      color: Colors.transparent,
+                                    ),
                                   ),
                         ];
                       },
@@ -661,7 +818,10 @@ class _TrafficChart extends StatelessWidget {
 
   LineChartBarData _line(List<double> values, Color color) {
     return LineChartBarData(
-      spots: List.generate(values.length, (i) => FlSpot(i.toDouble(), values[i])),
+      spots: List.generate(
+        values.length,
+        (i) => FlSpot(i.toDouble(), values[i]),
+      ),
       isCurved: true,
       curveSmoothness: 0.25,
       color: color,
@@ -681,9 +841,20 @@ class _LegendDot extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
         const SizedBox(width: 7),
-        Text(label, style: TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w500)),
+        Text(
+          label,
+          style: TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
       ],
     );
   }
@@ -710,26 +881,43 @@ class _AlertsPanel extends StatelessWidget {
                   children: [
                     Text(
                       'Active Alerts',
-                      style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'Recent security events',
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
+                      'Recent security events with source, time, and rule details',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.red.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.red.withValues(alpha: 0.2)),
+                  border: Border.all(
+                    color: AppColors.red.withValues(alpha: 0.2),
+                  ),
                 ),
                 child: Text(
                   '$active active',
-                  style: TextStyle(color: AppColors.redLight, fontSize: 12, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: AppColors.redLight,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -737,7 +925,12 @@ class _AlertsPanel extends StatelessWidget {
           const SizedBox(height: 12),
           Expanded(
             child: alerts.isEmpty
-                ? Center(child: Text('No recent alerts', style: TextStyle(color: AppColors.textDim)))
+                ? Center(
+                    child: Text(
+                      'No recent alerts',
+                      style: TextStyle(color: AppColors.textDim),
+                    ),
+                  )
                 : ListView.separated(
                     itemCount: alerts.length,
                     separatorBuilder: (_, index) => const SizedBox(height: 12),
@@ -748,7 +941,11 @@ class _AlertsPanel extends StatelessWidget {
                       return FadeSlideIn(
                         delay: Duration(milliseconds: 50 * i),
                         offset: const Offset(8, 0),
-                        child: _AlertItem(item: item, severity: severity, color: color),
+                        child: _AlertItem(
+                          item: item,
+                          severity: severity,
+                          color: color,
+                        ),
                       );
                     },
                   ),
@@ -760,13 +957,32 @@ class _AlertsPanel extends StatelessWidget {
 }
 
 class _AlertItem extends StatelessWidget {
-  const _AlertItem({required this.item, required this.severity, required this.color});
+  const _AlertItem({
+    required this.item,
+    required this.severity,
+    required this.color,
+  });
   final Map<String, dynamic> item;
   final String severity;
   final Color color;
 
   @override
   Widget build(BuildContext context) {
+    final source = _alertSourceLabel(item['source']?.toString());
+    final ip = item['src_ip']?.toString();
+    final rule = item['rule']?.toString();
+    final protocol = item['protocol']?.toString();
+    final dstIp = item['dst_ip']?.toString();
+    final dstPort = item['dst_port']?.toString();
+    final timestamp = timeAgo(item['timestamp']?.toString());
+    final detailLine = _alertDetailLine(
+      ip: ip,
+      rule: rule,
+      protocol: protocol,
+      dstIp: dstIp,
+      dstPort: dstPort,
+    );
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -799,19 +1015,114 @@ class _AlertItem extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              Flexible(
+                child: Text(
+                  detailLine.isEmpty ? 'No extra details provided' : detailLine,
+                  style: GoogleFonts.jetBrainsMono(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
               Text(
-                item['src_ip']?.toString() ?? '',
-                style: GoogleFonts.jetBrainsMono(
-                  color: AppColors.textMuted,
+                timestamp,
+                style: TextStyle(
+                  color: AppColors.textLabel,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              Text(
-                timeAgo(item['timestamp']?.toString()),
-                style: TextStyle(color: AppColors.textLabel, fontSize: 13, fontWeight: FontWeight.w500),
-              ),
             ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _InfoChip(label: source, icon: Icons.source_outlined),
+              _InfoChip(
+                label: severity.toUpperCase(),
+                icon: Icons.flag_outlined,
+              ),
+              if (ip != null && ip.isNotEmpty)
+                _InfoChip(label: ip, icon: Icons.public_outlined),
+              if (protocol != null && protocol.isNotEmpty)
+                _InfoChip(label: protocol, icon: Icons.settings_ethernet),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _alertSourceLabel(String? source) {
+    switch ((source ?? '').toLowerCase()) {
+      case 'firewall':
+        return 'Firewall';
+      case 'packet_capture':
+        return 'Packet capture';
+      case 'manual':
+        return 'Manual review';
+      default:
+        return 'System';
+    }
+  }
+
+  String _alertDetailLine({
+    String? ip,
+    String? rule,
+    String? protocol,
+    String? dstIp,
+    String? dstPort,
+  }) {
+    final parts = <String>[];
+    if (ip != null && ip.isNotEmpty) {
+      parts.add('src $ip');
+    }
+    if (protocol != null && protocol.isNotEmpty) {
+      parts.add(protocol);
+    }
+    if (dstIp != null && dstIp.isNotEmpty) {
+      parts.add(
+        'dst $dstIp${dstPort != null && dstPort.isNotEmpty ? ':$dstPort' : ''}',
+      );
+    }
+    if (rule != null && rule.isNotEmpty) {
+      parts.add(rule);
+    }
+    return parts.join('  •  ');
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({required this.label, required this.icon});
+
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.border,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.borderElevated),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: AppColors.cyanLight),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
@@ -835,12 +1146,25 @@ class _PacketDonut extends StatelessWidget {
     if (protocols.isEmpty) {
       return _figmaDefaults.map((e) => (e.$1, e.$2.toDouble(), e.$3)).toList();
     }
-    final total = protocols.fold<int>(0, (s, p) => s + ((p['count'] as num?)?.toInt() ?? 0));
-    final colors = [AppColors.donutHttp, AppColors.donutSsh, AppColors.donutFtp, AppColors.donutDns, AppColors.donutOther];
+    final total = protocols.fold<int>(
+      0,
+      (s, p) => s + ((p['count'] as num?)?.toInt() ?? 0),
+    );
+    final colors = [
+      AppColors.donutHttp,
+      AppColors.donutSsh,
+      AppColors.donutFtp,
+      AppColors.donutDns,
+      AppColors.donutOther,
+    ];
     return protocols.asMap().entries.map((e) {
       final count = (e.value['count'] as num?)?.toInt() ?? 0;
       final pct = total > 0 ? count / total * 100 : 0.0;
-      return (e.value['protocol']?.toString() ?? 'Unknown', pct, colors[e.key % colors.length]);
+      return (
+        e.value['protocol']?.toString() ?? 'Unknown',
+        pct,
+        colors[e.key % colors.length],
+      );
     }).toList();
   }
 
@@ -854,12 +1178,20 @@ class _PacketDonut extends StatelessWidget {
         children: [
           Text(
             'Packet Classification',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             'By protocol type',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const SizedBox(height: 12),
           Expanded(
@@ -891,22 +1223,39 @@ class _PacketDonut extends StatelessWidget {
             spacing: 14,
             runSpacing: 8,
             alignment: WrapAlignment.center,
-            children: segments.take(4).map((s) => _LegendDot(color: s.$3, label: s.$1)).toList(),
+            children: segments
+                .take(4)
+                .map((s) => _LegendDot(color: s.$3, label: s.$1))
+                .toList(),
           ),
           if (segments.length > 4)
-            Center(child: _LegendDot(color: segments[4].$3, label: segments[4].$1)),
+            Center(
+              child: _LegendDot(color: segments[4].$3, label: segments[4].$1),
+            ),
           const SizedBox(height: 12),
           Row(
             children: [
               Expanded(child: _PctCell(segments[0])),
-              Expanded(child: _PctCell(segments.length > 1 ? segments[1] : segments[0])),
+              Expanded(
+                child: _PctCell(
+                  segments.length > 1 ? segments[1] : segments[0],
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: _PctCell(segments.length > 2 ? segments[2] : segments[0])),
-              Expanded(child: _PctCell(segments.length > 3 ? segments[3] : segments[0])),
+              Expanded(
+                child: _PctCell(
+                  segments.length > 2 ? segments[2] : segments[0],
+                ),
+              ),
+              Expanded(
+                child: _PctCell(
+                  segments.length > 3 ? segments[3] : segments[0],
+                ),
+              ),
             ],
           ),
         ],
@@ -923,16 +1272,28 @@ class _PctCell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(width: 8, height: 8, decoration: BoxDecoration(color: segment.$3, shape: BoxShape.circle)),
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: segment.$3, shape: BoxShape.circle),
+        ),
         const SizedBox(width: 6),
         Text(
           segment.$1,
-          style: TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w500),
+          style: TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
         ),
         const Spacer(),
         Text(
           '${segment.$2.round()}%',
-          style: TextStyle(color: AppColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w600),
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         const SizedBox(width: 16),
       ],
@@ -959,12 +1320,20 @@ class _MaliciousIPsTable extends StatelessWidget {
                 children: [
                   Text(
                     'Top Malicious IPs',
-                    style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   SizedBox(height: 4),
                   Text(
                     'Most frequent threat sources',
-                    style: TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
@@ -975,10 +1344,18 @@ class _MaliciousIPsTable extends StatelessWidget {
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                icon: Icon(Icons.open_in_new, size: 12, color: AppColors.cyanLight),
+                icon: Icon(
+                  Icons.open_in_new,
+                  size: 12,
+                  color: AppColors.cyanLight,
+                ),
                 label: Text(
                   'View All',
-                  style: TextStyle(color: AppColors.cyanLight, fontSize: 13, fontWeight: FontWeight.w500),
+                  style: TextStyle(
+                    color: AppColors.cyanLight,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ],
@@ -993,14 +1370,24 @@ class _MaliciousIPsTable extends StatelessWidget {
                   flex: 3,
                   child: Text(
                     'IP ADDRESS',
-                    style: TextStyle(color: AppColors.textLabel, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+                    style: TextStyle(
+                      color: AppColors.textLabel,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
                 Expanded(
                   flex: 2,
                   child: Text(
                     'COUNTRY',
-                    style: TextStyle(color: AppColors.textLabel, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+                    style: TextStyle(
+                      color: AppColors.textLabel,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
                 Expanded(
@@ -1008,7 +1395,12 @@ class _MaliciousIPsTable extends StatelessWidget {
                   child: Text(
                     'ATTEMPTS',
                     textAlign: TextAlign.right,
-                    style: TextStyle(color: AppColors.textLabel, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+                    style: TextStyle(
+                      color: AppColors.textLabel,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
                 Expanded(
@@ -1016,7 +1408,12 @@ class _MaliciousIPsTable extends StatelessWidget {
                   child: Text(
                     'RISK LEVEL',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textLabel, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+                    style: TextStyle(
+                      color: AppColors.textLabel,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ],
@@ -1024,21 +1421,34 @@ class _MaliciousIPsTable extends StatelessWidget {
           ),
           Expanded(
             child: threats.isEmpty
-                ? Center(child: Text('No threat data yet', style: TextStyle(color: AppColors.textDim)))
+                ? Center(
+                    child: Text(
+                      'No threat data yet',
+                      style: TextStyle(color: AppColors.textDim),
+                    ),
+                  )
                 : ListView.separated(
                     itemCount: threats.length,
-                    separatorBuilder: (_, index) => Divider(color: AppColors.border, height: 1),
+                    separatorBuilder: (_, index) =>
+                        Divider(color: AppColors.border, height: 1),
                     itemBuilder: (context, i) {
                       final row = threats[i];
                       final severity = row['severity']?.toString() ?? 'medium';
                       final color = severityColor(severity);
                       final evidence = row['evidence'];
-                      final attempts = (row['attempts'] as num?)?.toInt() ??
-                          (evidence is Map ? evidence['attempts'] as num? : null)?.toInt() ??
+                      final attempts =
+                          (row['attempts'] as num?)?.toInt() ??
+                          (evidence is Map
+                                  ? evidence['attempts'] as num?
+                                  : null)
+                              ?.toInt() ??
                           (row['final_score'] as num?)?.toInt() ??
                           0;
-                      final country = row['country']?.toString() ??
-                          (evidence is Map ? evidence['country']?.toString() : null) ??
+                      final country =
+                          row['country']?.toString() ??
+                          (evidence is Map
+                              ? evidence['country']?.toString()
+                              : null) ??
                           row['classification']?.toString() ??
                           '-';
                       return _TableRow(
@@ -1110,7 +1520,11 @@ class _TableRowState extends State<_TableRow> {
                 flex: 2,
                 child: Text(
                   widget.country,
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 14, fontWeight: FontWeight.w500),
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
               Expanded(
@@ -1118,12 +1532,21 @@ class _TableRowState extends State<_TableRow> {
                 child: Text(
                   widget.attempts.toString(),
                   textAlign: TextAlign.right,
-                  style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               Expanded(
                 flex: 2,
-                child: Center(child: CyberBadge(label: widget.severity, color: widget.color)),
+                child: Center(
+                  child: CyberBadge(
+                    label: widget.severity,
+                    color: widget.color,
+                  ),
+                ),
               ),
             ],
           ),

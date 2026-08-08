@@ -1,8 +1,7 @@
 Future<void> ensureReady() async {}
 
-String get bootTitle => 'Connecting to backend…';
+String get bootTitle => 'Starting CyberSentinel…';
 
-String get bootSubtitle =>
-    'Checking API at your configured URL (start python run.py locally)';
+String get bootSubtitle => 'Opening the secure dashboard';
 
 bool get supportsDesktopEngine => false;

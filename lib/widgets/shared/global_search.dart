@@ -50,7 +50,9 @@ class GlobalSearchField extends StatelessWidget {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: AppColors.cyan.withValues(alpha: 0.5)),
+            borderSide: BorderSide(
+              color: AppColors.cyan.withValues(alpha: 0.5),
+            ),
           ),
         ),
       ),
@@ -80,11 +82,36 @@ class _GlobalSearchDialogState extends State<_GlobalSearchDialog> {
   bool _loading = false;
 
   static const _pages = [
-    (0, 'Dashboard', Icons.grid_view_rounded, ['dashboard', 'home', 'overview']),
-    (1, 'Packet Tracing', Icons.account_tree_outlined, ['packet', 'capture', 'trace', 'live']),
-    (2, 'Firewall Logs', Icons.shield_outlined, ['firewall', 'logs', 'alerts', 'monitor']),
-    (3, 'Virus Scanner', Icons.bug_report_outlined, ['virus', 'file', 'url', 'scan', 'vt']),
-    (4, 'IP Analysis', Icons.location_on_outlined, ['ip', 'reputation', 'geo', 'threat']),
+    (
+      0,
+      'Dashboard',
+      Icons.grid_view_rounded,
+      ['dashboard', 'home', 'overview'],
+    ),
+    (
+      1,
+      'Packet Tracing',
+      Icons.account_tree_outlined,
+      ['packet', 'capture', 'trace', 'live'],
+    ),
+    (
+      2,
+      'Firewall Logs',
+      Icons.shield_outlined,
+      ['firewall', 'logs', 'alerts', 'monitor'],
+    ),
+    (
+      3,
+      'Virus Scanner',
+      Icons.bug_report_outlined,
+      ['virus', 'file', 'url', 'scan', 'vt'],
+    ),
+    (
+      4,
+      'IP Analysis',
+      Icons.location_on_outlined,
+      ['ip', 'reputation', 'geo', 'threat'],
+    ),
     (5, 'Reports', Icons.description_outlined, ['report', 'pdf', 'export']),
     (6, 'Settings', Icons.settings_outlined, ['settings', 'profile', 'theme']),
   ];
@@ -115,13 +142,15 @@ class _GlobalSearchDialogState extends State<_GlobalSearchDialog> {
       if (q.isEmpty ||
           page.$2.toLowerCase().contains(q) ||
           page.$4.any((k) => k.contains(q))) {
-        out.add(_SearchResult(
-          title: page.$2,
-          subtitle: 'Go to ${page.$2}',
-          icon: page.$3,
-          kind: _SearchKind.page,
-          pageIndex: page.$1,
-        ));
+        out.add(
+          _SearchResult(
+            title: page.$2,
+            subtitle: 'Go to ${page.$2}',
+            icon: page.$3,
+            kind: _SearchKind.page,
+            pageIndex: page.$1,
+          ),
+        );
       }
     }
 
@@ -154,13 +183,15 @@ class _GlobalSearchDialogState extends State<_GlobalSearchDialog> {
     for (final packet in PacketCaptureService.instance.packets) {
       if (q.isNotEmpty && !packet.ip.toLowerCase().contains(q)) continue;
       if (q.isEmpty && out.length > 12) break;
-      out.add(_SearchResult(
-        title: packet.ip,
-        subtitle: '${packet.protocol} :${packet.port} — ${packet.status}',
-        icon: Icons.lan_outlined,
-        kind: _SearchKind.ip,
-        ip: packet.ip,
-      ));
+      out.add(
+        _SearchResult(
+          title: packet.ip,
+          subtitle: '${packet.protocol} :${packet.port} — ${packet.status}',
+          icon: Icons.lan_outlined,
+          kind: _SearchKind.ip,
+          ip: packet.ip,
+        ),
+      );
     }
 
     if (ApiConfig.isConfigured && q.length >= 2) {
@@ -171,20 +202,23 @@ class _GlobalSearchDialogState extends State<_GlobalSearchDialog> {
           if (raw is! Map) continue;
           final map = Map<String, dynamic>.from(raw);
           final ip = map['src_ip']?.toString() ?? '';
-          final rule = map['rule']?.toString() ?? map['severity']?.toString() ?? '';
+          final rule =
+              map['rule']?.toString() ?? map['severity']?.toString() ?? '';
           if (q.isNotEmpty &&
               !ip.toLowerCase().contains(q) &&
               !rule.toLowerCase().contains(q)) {
             continue;
           }
-          out.add(_SearchResult(
-            title: ip.isEmpty ? 'Firewall alert' : ip,
-            subtitle: rule,
-            icon: Icons.shield,
-            kind: _SearchKind.ip,
-            ip: ip.isEmpty ? null : ip,
-            pageIndex: 2,
-          ));
+          out.add(
+            _SearchResult(
+              title: ip.isEmpty ? 'Firewall alert' : ip,
+              subtitle: rule,
+              icon: Icons.shield,
+              kind: _SearchKind.ip,
+              ip: ip.isEmpty ? null : ip,
+              pageIndex: 2,
+            ),
+          );
         }
       } catch (_) {
         // Offline search still works for pages/packets.
@@ -209,7 +243,8 @@ class _GlobalSearchDialogState extends State<_GlobalSearchDialog> {
 
   bool _looksLikeUrl(String value) {
     final v = value.toLowerCase();
-    return v.contains('.') && (v.startsWith('http') || v.contains('www.') || !v.contains(' '));
+    return v.contains('.') &&
+        (v.startsWith('http') || v.contains('www.') || !v.contains(' '));
   }
 
   void _select(_SearchResult result) {
@@ -251,22 +286,34 @@ class _GlobalSearchDialogState extends State<_GlobalSearchDialog> {
                   child: TextField(
                     controller: _controller,
                     focusNode: _focus,
-                    style: GoogleFonts.inter(color: AppColors.textPrimary, fontSize: 15),
+                    style: GoogleFonts.inter(
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
+                    ),
                     decoration: InputDecoration(
                       hintText: 'Search IPs, URLs, pages…',
                       hintStyle: GoogleFonts.inter(color: AppColors.textDim),
-                      prefixIcon: Icon(Icons.search, color: AppColors.cyanLight),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: AppColors.cyanLight,
+                      ),
                       suffixIcon: _loading
                           ? const Padding(
                               padding: EdgeInsets.all(12),
                               child: SizedBox(
                                 width: 18,
                                 height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               ),
                             )
                           : IconButton(
-                              icon: Icon(Icons.close, color: AppColors.textMuted, size: 20),
+                              icon: Icon(
+                                Icons.close,
+                                color: AppColors.textMuted,
+                                size: 20,
+                              ),
                               onPressed: () => Navigator.pop(context),
                             ),
                       filled: true,
@@ -287,7 +334,10 @@ class _GlobalSearchDialogState extends State<_GlobalSearchDialog> {
                     padding: const EdgeInsets.all(28),
                     child: Text(
                       'Type an IP, URL, or page name…',
-                      style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13),
+                      style: GoogleFonts.inter(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                      ),
                     ),
                   )
                 else
@@ -305,7 +355,11 @@ class _GlobalSearchDialogState extends State<_GlobalSearchDialog> {
                               color: AppColors.cyan.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Icon(r.icon, color: AppColors.cyanLight, size: 18),
+                            child: Icon(
+                              r.icon,
+                              color: AppColors.cyanLight,
+                              size: 18,
+                            ),
                           ),
                           title: Text(
                             r.title,
@@ -317,9 +371,12 @@ class _GlobalSearchDialogState extends State<_GlobalSearchDialog> {
                           ),
                           subtitle: Text(
                             r.subtitle,
-                            style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              color: AppColors.textMuted,
+                              fontSize: 12,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.visible,
                           ),
                           onTap: () => _select(r),
                         );

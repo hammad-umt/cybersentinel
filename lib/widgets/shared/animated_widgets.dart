@@ -31,9 +31,10 @@ class _FadeSlideInState extends State<FadeSlideIn>
     super.initState();
     _controller = AnimationController(vsync: this, duration: widget.duration);
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
-    _slide = Tween<Offset>(begin: widget.offset, end: Offset.zero).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
+    _slide = Tween<Offset>(
+      begin: widget.offset,
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     Future.delayed(widget.delay, () {
       if (mounted) _controller.forward();
     });
@@ -116,9 +117,10 @@ class _AnimatedProgressBarState extends State<AnimatedProgressBar>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
-    _anim = Tween<double>(begin: 0, end: widget.value.clamp(0, 1)).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
+    _anim = Tween<double>(
+      begin: 0,
+      end: widget.value.clamp(0, 1),
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     Future.delayed(widget.delay, () {
       if (mounted) _controller.forward();
     });
@@ -128,10 +130,10 @@ class _AnimatedProgressBarState extends State<AnimatedProgressBar>
   void didUpdateWidget(AnimatedProgressBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.value != widget.value) {
-      _anim = Tween<double>(
-        begin: _anim.value,
-        end: widget.value.clamp(0, 1),
-      ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+      _anim = Tween<double>(begin: _anim.value, end: widget.value.clamp(0, 1))
+          .animate(
+            CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+          );
       _controller
         ..reset()
         ..forward();
@@ -214,7 +216,9 @@ class _ShimmerBoxState extends State<ShimmerBox>
               end: Alignment(-0.5 + 2 * _controller.value, 0),
               colors: [
                 AppColors.border,
-                AppColors.isLight ? const Color(0xFFE2E8F0) : const Color(0xFF252B3D),
+                AppColors.isLight
+                    ? const Color(0xFFE2E8F0)
+                    : const Color(0xFF252B3D),
                 AppColors.border,
               ],
             ),
@@ -227,7 +231,7 @@ class _ShimmerBoxState extends State<ShimmerBox>
 
 /// Pulsing dot for LIVE status badge.
 class PulsingDot extends StatefulWidget {
-  PulsingDot({super.key, this.color = AppColors.red, this.size = 8});
+  const PulsingDot({super.key, this.color = AppColors.red, this.size = 8});
 
   final Color color;
   final double size;
@@ -264,7 +268,9 @@ class _PulsingDotState extends State<PulsingDot>
           width: widget.size,
           height: widget.size,
           decoration: BoxDecoration(
-            color: widget.color.withValues(alpha: 0.5 + 0.5 * _controller.value),
+            color: widget.color.withValues(
+              alpha: 0.5 + 0.5 * _controller.value,
+            ),
             shape: BoxShape.circle,
           ),
         );
@@ -302,7 +308,10 @@ class SmoothDataView extends StatelessWidget {
               const SizedBox(height: 12),
               TextButton(
                 onPressed: onRetry,
-                child: Text('Retry', style: TextStyle(color: AppColors.cyanLight)),
+                child: Text(
+                  'Retry',
+                  style: TextStyle(color: AppColors.cyanLight),
+                ),
               ),
             ],
           ],

@@ -23,6 +23,7 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
   IpGeoIntel? _geoIntel;
   bool _loading = false;
   String? _error;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -35,6 +36,7 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
   void dispose() {
     NavigationIntentService.instance.removeListener(_onNavigationIntent);
     _ipController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -91,74 +93,98 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(32),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1152),
-          child: Column(
-            children: [
-              const PageHeader(
-                title: 'IP threat analysis',
-                subtitle: 'Unified threat score, geo intelligence, and reputation context for any IP.',
-                icon: Icons.location_on_outlined,
-              ),
-              FadeSlideIn(
-                child: CyberCard(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _ipController,
-                          style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
-                          cursorColor: AppColors.cyanLight,
-                          decoration: InputDecoration(
-                            prefixIcon: Icon(Icons.search, color: AppColors.textMuted),
-                            hintText: 'Enter IP address (e.g. 185.220.101.45)',
-                            hintStyle: TextStyle(color: AppColors.textDim),
-                            filled: true,
-                            fillColor: AppColors.border,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide.none,
+    return Scrollbar(
+      controller: _scrollController,
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        padding: const EdgeInsets.all(32),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1152),
+            child: Column(
+              children: [
+                const PageHeader(
+                  title: 'IP threat analysis',
+                  subtitle:
+                      'Unified threat score, geo intelligence, and reputation context for any IP.',
+                  icon: Icons.location_on_outlined,
+                ),
+                FadeSlideIn(
+                  child: CyberCard(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _ipController,
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 16,
                             ),
-                            focusedBorder: OutlineInputBorder(
+                            cursorColor: AppColors.cyanLight,
+                            decoration: InputDecoration(
+                              prefixIcon: Icon(
+                                Icons.search,
+                                color: AppColors.textMuted,
+                              ),
+                              hintText: 'Enter IP address (e.g. 185.220.101.45)',
+                              hintStyle: TextStyle(color: AppColors.textDim),
+                              filled: true,
+                              fillColor: AppColors.border,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide.none,
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(
+                                  color: AppColors.cyan.withValues(alpha: 0.5),
+                                ),
+                              ),
+                            ),
+                            onSubmitted: (_) => _analyze(),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        ElevatedButton(
+                          onPressed: _loading ? null : _analyze,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.cyan,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 32,
+                              vertical: 18,
+                            ),
+                            shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: AppColors.cyan.withValues(alpha: 0.5)),
                             ),
                           ),
-                          onSubmitted: (_) => _analyze(),
+                          child: _loading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Text(
+                                  'Analyze',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      ElevatedButton(
-                        onPressed: _loading ? null : _analyze,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.cyan,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 18),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        child: _loading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : Text('Analyze', style: TextStyle(fontWeight: FontWeight.w600)),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 32),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 450),
-                switchInCurve: Curves.easeOutCubic,
-                child: _buildResults(),
-              ),
-            ],
+                const SizedBox(height: 32),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 450),
+                  switchInCurve: Curves.easeOutCubic,
+                  child: _buildResults(),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -179,14 +205,22 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
         child: CyberCard(
           child: Column(
             children: [
-              Icon(Icons.search, size: 64, color: AppColors.textDim.withValues(alpha: 0.5)),
+              Icon(
+                Icons.search,
+                size: 64,
+                color: AppColors.textDim.withValues(alpha: 0.5),
+              ),
               const SizedBox(height: 24),
-               Text(
+              Text(
                 'No IP Analyzed Yet',
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 24, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 12),
-               Text(
+              Text(
                 'Enter an IP address above to view threat intelligence',
                 style: TextStyle(color: AppColors.textMuted, fontSize: 16),
               ),
@@ -204,7 +238,7 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
     final isp = geo?.isp ?? 'Unknown ISP';
     final country = geo?.countryLabel ?? '--';
     final countrySubtitle = geo != null && geo.countryName.isNotEmpty
-        ? '${geo.countryCode.isNotEmpty ? geo.countryCode : geo.countryName}'
+        ? (geo.countryCode.isNotEmpty ? geo.countryCode : geo.countryName)
         : country;
 
     return Column(
@@ -237,7 +271,9 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
                     icon: Icons.language,
                     iconColor: AppColors.purple,
                     title: isp,
-                    subtitle: geo?.asn.isNotEmpty == true ? 'ASN ${geo!.asn}' : 'Internet Service Provider',
+                    subtitle: geo?.asn.isNotEmpty == true
+                        ? 'ASN ${geo!.asn}'
+                        : 'Internet Service Provider',
                     label: 'ISP',
                   ),
                 ),
@@ -262,12 +298,20 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
                 children: [
                   FadeSlideIn(
                     delay: const Duration(milliseconds: 240),
-                    child: _MapPlaceholder(ip: _threat!['ip']?.toString() ?? '', geo: geo),
+                    child: _MapPlaceholder(
+                      ip: _threat!['ip']?.toString() ?? '',
+                      geo: geo,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   FadeSlideIn(
                     delay: const Duration(milliseconds: 320),
-                    child: _IpDetails(threat: _threat!, severity: severity, color: color, geo: geo),
+                    child: _IpDetails(
+                      threat: _threat!,
+                      severity: severity,
+                      color: color,
+                      geo: geo,
+                    ),
                   ),
                 ],
               );
@@ -279,14 +323,22 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
                   Expanded(
                     child: FadeSlideIn(
                       delay: const Duration(milliseconds: 240),
-                      child: _MapPlaceholder(ip: _threat!['ip']?.toString() ?? '', geo: geo),
+                      child: _MapPlaceholder(
+                        ip: _threat!['ip']?.toString() ?? '',
+                        geo: geo,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
                     child: FadeSlideIn(
                       delay: const Duration(milliseconds: 320),
-                      child: _IpDetails(threat: _threat!, severity: severity, color: color, geo: geo),
+                      child: _IpDetails(
+                        threat: _threat!,
+                        severity: severity,
+                        color: color,
+                        geo: geo,
+                      ),
                     ),
                   ),
                 ],
@@ -297,14 +349,16 @@ class _IPAnalysisPageContentState extends State<IPAnalysisPageContent> {
         const SizedBox(height: 24),
         FadeSlideIn(
           delay: const Duration(milliseconds: 400),
-          child: _ActivityChart(scores: [
-            (_threat!['packet_score'] as num?)?.toDouble() ?? 0,
-            (_threat!['anomaly_score'] as num?)?.toDouble() ?? 0,
-            (_threat!['intel_score'] as num?)?.toDouble() ?? 0,
-            score,
-            score * 0.8,
-            score * 0.6,
-          ]),
+          child: _ActivityChart(
+            scores: [
+              (_threat!['packet_score'] as num?)?.toDouble() ?? 0,
+              (_threat!['anomaly_score'] as num?)?.toDouble() ?? 0,
+              (_threat!['intel_score'] as num?)?.toDouble() ?? 0,
+              score,
+              score * 0.8,
+              score * 0.6,
+            ],
+          ),
         ),
       ],
     );
@@ -341,8 +395,20 @@ class _InfoCard extends StatelessWidget {
             child: Icon(icon, color: iconColor, size: 24),
           ),
           const Spacer(),
-          Text(title, style: TextStyle(color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-          Text(subtitle, style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+          Text(
+            title,
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.visible,
+          ),
+          Text(
+            subtitle,
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+          ),
           const SizedBox(height: 4),
           Text(label, style: TextStyle(color: AppColors.textDim, fontSize: 12)),
         ],
@@ -365,7 +431,11 @@ class _ReputationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final barColor = score >= 70 ? AppColors.green : score >= 40 ? AppColors.amber : AppColors.red;
+    final barColor = score >= 70
+        ? AppColors.green
+        : score >= 40
+        ? AppColors.amber
+        : AppColors.red;
     final abuseLabel = abuseConfidence != null
         ? 'AbuseIPDB: $abuseConfidence% · $totalReports reports'
         : 'Threat score';
@@ -376,15 +446,27 @@ class _ReputationCard extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: AppColors.red.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(
+              color: AppColors.red.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: Icon(Icons.shield, color: AppColors.red, size: 24),
           ),
           const Spacer(),
           AnimatedCounter(
             value: score.round(),
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-          Text('/100 · $abuseLabel', style: TextStyle(color: AppColors.textMuted, fontSize: 13), maxLines: 2, overflow: TextOverflow.ellipsis),
+          Text(
+            '/100 · $abuseLabel',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            maxLines: 3,
+            overflow: TextOverflow.visible,
+          ),
           const SizedBox(height: 12),
           AnimatedProgressBar(value: score / 100, color: barColor),
         ],
@@ -421,13 +503,23 @@ class _MapPlaceholder extends StatelessWidget {
                 ),
               ),
             ),
-            SizedBox(width: 128, height: 128, child: PulsingDot(color: AppColors.cyan, size: 12)),
+            SizedBox(
+              width: 128,
+              height: 128,
+              child: PulsingDot(color: AppColors.cyan, size: 12),
+            ),
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.location_on, color: AppColors.cyanLight, size: 48),
                 const SizedBox(height: 8),
-                Text(ip, style: GoogleFonts.jetBrainsMono(color: AppColors.textPrimary, fontSize: 16)),
+                Text(
+                  ip,
+                  style: GoogleFonts.jetBrainsMono(
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                  ),
+                ),
                 if (geo != null && geo!.locationLabel != 'Unknown') ...[
                   const SizedBox(height: 4),
                   Text(
@@ -440,7 +532,10 @@ class _MapPlaceholder extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     coords,
-                    style: GoogleFonts.jetBrainsMono(color: AppColors.textDim, fontSize: 12),
+                    style: GoogleFonts.jetBrainsMono(
+                      color: AppColors.textDim,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ],
@@ -488,43 +583,59 @@ class _IpDetails extends StatelessWidget {
     return CyberCard(
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final rowWidgets = rows.map(
-            (r) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(r.$1, style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-                    if (r.$1 == 'Threat Level')
-                      CyberBadge(label: severity, color: color)
-                    else
-                      Flexible(
-                        child: Text(
-                          r.$2,
-                          textAlign: TextAlign.right,
-                          style: GoogleFonts.jetBrainsMono(color: AppColors.textPrimary, fontSize: 13),
-                          overflow: TextOverflow.ellipsis,
+          final rowWidgets = rows
+              .map(
+                (r) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          r.$1,
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 13,
+                          ),
                         ),
-                      ),
-                  ],
+                        if (r.$1 == 'Threat Level')
+                          CyberBadge(label: severity, color: color)
+                        else
+                          Flexible(
+                            child: Text(
+                              r.$2,
+                              textAlign: TextAlign.right,
+                              style: GoogleFonts.jetBrainsMono(
+                                color: AppColors.textPrimary,
+                                fontSize: 13,
+                              ),
+                              softWrap: true,
+                              overflow: TextOverflow.visible,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ).toList();
+              )
+              .toList();
 
           final header = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-               Text(
+              Text(
                 'IP Information',
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               if (geo != null && geo!.providerStatus.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -533,9 +644,15 @@ class _IpDetails extends StatelessWidget {
                   runSpacing: 8,
                   children: [
                     if (geo!.providerStatus.containsKey('geoip'))
-                      CyberBadge(label: 'GeoIP: ${_providerLabel('geoip')}', color: AppColors.blue),
+                      CyberBadge(
+                        label: 'GeoIP: ${_providerLabel('geoip')}',
+                        color: AppColors.blue,
+                      ),
                     if (geo!.providerStatus.containsKey('abuseipdb'))
-                      CyberBadge(label: 'AbuseIPDB: ${_providerLabel('abuseipdb')}', color: AppColors.purple),
+                      CyberBadge(
+                        label: 'AbuseIPDB: ${_providerLabel('abuseipdb')}',
+                        color: AppColors.purple,
+                      ),
                   ],
                 ),
               ],
@@ -562,11 +679,7 @@ class _IpDetails extends StatelessWidget {
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              header,
-              const SizedBox(height: 16),
-              ...rowWidgets,
-            ],
+            children: [header, const SizedBox(height: 16), ...rowWidgets],
           );
         },
       ),
@@ -584,7 +697,14 @@ class _ActivityChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-           Text('Activity History', style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
+          Text(
+            'Activity History',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 16),
           SizedBox(
             height: 250,
@@ -593,18 +713,30 @@ class _ActivityChart extends StatelessWidget {
               LineChartData(
                 gridData: FlGridData(
                   show: true,
-                  getDrawingHorizontalLine: (_) =>  FlLine(color: AppColors.border, dashArray: [3, 3]),
+                  getDrawingHorizontalLine: (_) =>
+                      FlLine(color: AppColors.border, dashArray: [3, 3]),
                 ),
                 titlesData: const FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  topTitles: AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
                 ),
                 borderData: FlBorderData(show: false),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: List.generate(scores.length, (i) => FlSpot(i.toDouble(), scores[i])),
+                    spots: List.generate(
+                      scores.length,
+                      (i) => FlSpot(i.toDouble(), scores[i]),
+                    ),
                     isCurved: true,
                     color: AppColors.cyan,
                     barWidth: 2,

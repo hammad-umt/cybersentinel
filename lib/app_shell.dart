@@ -14,8 +14,8 @@ import 'package:cybersentinel/widgets/shared/animated_widgets.dart';
 import 'package:cybersentinel/widgets/shared/global_search.dart';
 import 'package:cybersentinel/widgets/shared/security_alerts_sheet.dart';
 import 'package:cybersentinel/widgets/virus_scanner/virus_scanner.dart';
-import 'package:cybersentinel/services/api_service.dart';
 import 'package:cybersentinel/services/auth_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -52,7 +52,6 @@ class MainAppShell extends StatefulWidget {
 
 class _MainAppShellState extends State<MainAppShell> {
   late int _pageIndex;
-  bool _backendLive = false;
   bool _copilotOpen = false;
 
   static const _pages = [
@@ -69,7 +68,6 @@ class _MainAppShellState extends State<MainAppShell> {
   void initState() {
     super.initState();
     _pageIndex = widget.initialIndex;
-    _checkHealth();
     NavigationIntentService.instance.addListener(_onNavigationIntent);
     SecurityAlertService.instance.addListener(_onAlertsChanged);
   }
@@ -92,15 +90,6 @@ class _MainAppShellState extends State<MainAppShell> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _checkHealth() async {
-    try {
-      await ApiService.instance.getHealth();
-      if (mounted) setState(() => _backendLive = true);
-    } catch (_) {
-      if (mounted) setState(() => _backendLive = false);
-    }
-  }
-
   void _navigate(int index) {
     if (index == _pageIndex) return;
     setState(() => _pageIndex = index);
@@ -109,6 +98,12 @@ class _MainAppShellState extends State<MainAppShell> {
   void _openCopilot() => setState(() => _copilotOpen = true);
   void _toggleCopilot() => setState(() => _copilotOpen = !_copilotOpen);
   void _closeCopilot() => setState(() => _copilotOpen = false);
+
+  bool get _isDesktopPlatform =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.linux);
 
   void _showAlerts(BuildContext context) {
     showSecurityAlertsPanel(context);
@@ -204,7 +199,8 @@ class _MainAppShellState extends State<MainAppShell> {
   }
 
   Widget _buildShell(BuildContext context) {
-    final isWide = MediaQuery.sizeOf(context).width >= 1024;
+    final isWide =
+        _isDesktopPlatform || MediaQuery.sizeOf(context).width >= 1024;
 
     if (isWide) {
       return Scaffold(
@@ -217,7 +213,6 @@ class _MainAppShellState extends State<MainAppShell> {
                 children: [
                   _DesktopSidebar(
                     activeIndex: _pageIndex,
-                    backendLive: _backendLive,
                     onNavigate: _navigate,
                   ),
                   Expanded(
@@ -264,7 +259,6 @@ class _MainAppShellState extends State<MainAppShell> {
             child: Column(
               children: [
                 _MobileHeader(
-                  backendLive: _backendLive,
                   pageTitle: _pageTitles[_pageIndex],
                   onAlertsTap: () => _showAlerts(context),
                   onSearchTap: () => showGlobalSearch(context),
@@ -300,14 +294,9 @@ class _MainAppShellState extends State<MainAppShell> {
 }
 
 class _DesktopSidebar extends StatelessWidget {
-  const _DesktopSidebar({
-    required this.activeIndex,
-    required this.backendLive,
-    required this.onNavigate,
-  });
+  const _DesktopSidebar({required this.activeIndex, required this.onNavigate});
 
   final int activeIndex;
-  final bool backendLive;
   final ValueChanged<int> onNavigate;
 
   static const _items = [
@@ -381,22 +370,17 @@ class _DesktopSidebar extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'System Status',
+                    'App Status',
                     style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                   ),
                   Row(
                     children: [
-                      if (backendLive)
-                        PulsingDot(color: AppColors.red, size: 8)
-                      else
-                        Icon(Icons.circle, color: AppColors.textDim, size: 8),
+                      PulsingDot(color: AppColors.greenLight, size: 8),
                       const SizedBox(width: 8),
                       Text(
-                        backendLive ? 'LIVE' : 'OFFLINE',
+                        'READY',
                         style: TextStyle(
-                          color: backendLive
-                              ? AppColors.redLight
-                              : AppColors.textDim,
+                          color: AppColors.greenLight,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -487,46 +471,56 @@ class _TopNavbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      decoration: BoxDecoration(
-        color: AppColors.panel,
-        border: Border(bottom: BorderSide(color: AppColors.border)),
-      ),
-      child: Row(
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final searchWidth = (constraints.maxWidth - 460).clamp(240.0, 320.0);
+
+        return Container(
+          height: 64,
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          decoration: BoxDecoration(
+            color: AppColors.panel,
+            border: Border(bottom: BorderSide(color: AppColors.border)),
           ),
-          const Spacer(),
-          const GlobalSearchField(),
-          const SizedBox(width: 16),
-          ListenableBuilder(
-            listenable: SecurityAlertService.instance,
-            builder: (context, _) {
-              final unread = SecurityAlertService.instance.unreadCount;
-              return _NavIconButton(
-                icon: Icons.notifications_none,
-                badge: unread > 0,
-                badgeCount: unread,
-                onTap: (_, anchor) => onAlertsTap(),
-              );
-            },
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              GlobalSearchField(width: searchWidth),
+              const SizedBox(width: 16),
+              ListenableBuilder(
+                listenable: SecurityAlertService.instance,
+                builder: (context, _) {
+                  final unread = SecurityAlertService.instance.unreadCount;
+                  return _NavIconButton(
+                    icon: Icons.notifications_none,
+                    badge: unread > 0,
+                    badgeCount: unread,
+                    onTap: (_, anchor) => onAlertsTap(),
+                  );
+                },
+              ),
+              const SizedBox(width: 8),
+              _NavIconButton(
+                icon: Icons.person_outline,
+                avatar: true,
+                onTap: (context, position) => onProfileTap(context, position),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          _NavIconButton(
-            icon: Icons.person_outline,
-            avatar: true,
-            onTap: (context, position) => onProfileTap(context, position),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -634,13 +628,11 @@ class _NavIconButtonState extends State<_NavIconButton> {
 
 class _MobileHeader extends StatelessWidget {
   const _MobileHeader({
-    required this.backendLive,
     required this.pageTitle,
     required this.onAlertsTap,
     required this.onSearchTap,
   });
 
-  final bool backendLive;
   final String pageTitle;
   final VoidCallback onAlertsTap;
   final VoidCallback onSearchTap;
@@ -673,13 +665,8 @@ class _MobileHeader extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  backendLive ? 'Backend connected' : 'Backend offline',
-                  style: TextStyle(
-                    color: backendLive
-                        ? AppColors.greenLight
-                        : AppColors.textDim,
-                    fontSize: 11,
-                  ),
+                  'Ready to monitor',
+                  style: TextStyle(color: AppColors.greenLight, fontSize: 11),
                 ),
               ],
             ),

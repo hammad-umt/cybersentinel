@@ -13,7 +13,6 @@ add_executable(${BINARY_NAME} WIN32
   "win32_window.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
-  "runner.exe.manifest"
 )
 
 # Apply the standard set of build settings. This can be removed for applications
@@ -33,8 +32,16 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
-target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib" "Shcore.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
+
+# Embed manifest at link time (avoids post-link mt.exe / LNK1327 on paths with spaces).
+if(MSVC)
+  target_link_options(${BINARY_NAME} PRIVATE
+    "/MANIFEST:EMBED"
+    "/MANIFESTUAC:level='requireAdministrator' uiAccess='false'"
+  )
+endif()
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)

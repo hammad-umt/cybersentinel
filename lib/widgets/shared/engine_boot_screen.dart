@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cybersentinel/services/api_config.dart';
 import 'package:cybersentinel/services/backend_launcher.dart';
 import 'package:cybersentinel/services/platform_prerequisites.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
@@ -7,7 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Shown while the local FastAPI engine is starting (Windows / Linux desktop).
+/// Shown while the local backend and chatbot services are starting (Windows / Linux desktop).
 class EngineBootScreen extends StatefulWidget {
   const EngineBootScreen({super.key, required this.child});
 
@@ -27,7 +28,9 @@ class _EngineBootScreenState extends State<EngineBootScreen> {
   }
 
   Future<void> _startPlatform() async {
-    await BackendLauncher.instance.start();
+    if (ApiConfig.baseUrl == ApiConfig.desktopBaseUrl) {
+      await BackendLauncher.instance.start();
+    }
     if (!kIsWeb) {
       // Npcap is only needed for live capture — do not block login on it.
       unawaited(PlatformPrerequisites.ensureReady());
@@ -84,8 +87,8 @@ class _EngineBootScreenState extends State<EngineBootScreen> {
                       const SizedBox(height: 16),
                       Text(
                         kIsWeb
-                            ? 'Cannot reach backend'
-                            : 'Backend engine failed to start',
+                            ? 'The app could not finish loading'
+                            : 'CyberSentinel could not start',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
                           color: AppColors.textPrimary,
@@ -95,7 +98,7 @@ class _EngineBootScreenState extends State<EngineBootScreen> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        '${snapshot.error}',
+                        'Please try again. If this keeps happening, restart the app or reinstall the desktop package.',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
                           color: AppColors.textMuted,

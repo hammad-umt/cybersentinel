@@ -2,23 +2,26 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cybersentinel/services/api_config.dart';
+import 'package:cybersentinel/services/desktop_runtime_config.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
-/// Starts the bundled FastAPI engine next to the Flutter desktop executable.
+/// Starts the bundled local backend service that powers the desktop API and chatbot routes.
 class BackendLauncher {
   BackendLauncher._();
   static final BackendLauncher instance = BackendLauncher._();
 
-  static const String apiBaseUrl = 'http://127.0.0.1:8000';
   static const Duration healthTimeout = Duration(seconds: 90);
   static const Duration healthPollInterval = Duration(milliseconds: 500);
 
   Process? _process;
   bool _starting = false;
+  int _port = DesktopRuntimeConfig.defaultPort;
   final List<String> _engineLogTail = [];
   static const int _maxLogLines = 24;
+  IOSink? _engineLogFileSink;
 
   void _appendEngineLog(String line) {
     final trimmed = line.trim();
@@ -43,20 +46,116 @@ class BackendLauncher {
     return 'cybersentinel_engine';
   }
 
+  String get _appDataEngineDirectoryPath {
+    if (Platform.isWindows) {
+      final appData = Platform.environment['APPDATA'];
+      if (appData != null && appData.isNotEmpty) {
+        return p.join(
+          appData,
+          DesktopRuntimeConfig.appDataFolderName,
+          DesktopRuntimeConfig.runtimeFolderName,
+          'engine',
+        );
+      }
+    }
+
+    if (Platform.isLinux || Platform.isMacOS) {
+      final home = Platform.environment['HOME'];
+      if (home != null && home.isNotEmpty) {
+        return p.join(
+          home,
+          '.local',
+          'share',
+          DesktopRuntimeConfig.appDataFolderName,
+          DesktopRuntimeConfig.runtimeFolderName,
+          'engine',
+        );
+      }
+    }
+
+    return '';
+  }
+
   String get engineDirectory {
+    final appDataEngine = _appDataEngineDirectoryPath;
+    if (appDataEngine.isNotEmpty && _engineExists(appDataEngine)) {
+      return appDataEngine;
+    }
+
     final executableDir = p.dirname(Platform.resolvedExecutable);
 
     final besideExe = p.join(executableDir, 'engine');
     if (_engineExists(besideExe)) return besideExe;
 
-    // flutter run: windows/runner or linux/runner relative engine folder
     final runnerEngine = p.normalize(p.join(executableDir, '..', 'engine'));
     if (_engineExists(runnerEngine)) return runnerEngine;
 
     return besideExe;
   }
 
+  Future<String> get appDataRuntimeDirectory async {
+    final dir = await getApplicationSupportDirectory();
+    final runtimeDir = p.join(
+      dir.path,
+      DesktopRuntimeConfig.appDataFolderName,
+      DesktopRuntimeConfig.runtimeFolderName,
+    );
+    await Directory(runtimeDir).create(recursive: true);
+    return runtimeDir;
+  }
+
+  Future<String> get appDataEngineDirectory async {
+    final runtimeDir = await appDataRuntimeDirectory;
+    final engineDir = p.join(runtimeDir, 'engine');
+    await Directory(engineDir).create(recursive: true);
+    return engineDir;
+  }
+
   String get engineExecutable => p.join(engineDirectory, engineBinaryName);
+
+  Future<String> get runtimeEngineExecutable async {
+    final engineDir = await appDataEngineDirectory;
+    return p.join(engineDir, engineBinaryName);
+  }
+
+  Future<String> _resolveEngineDirectory() async {
+    final appDataDir = _appDataEngineDirectoryPath;
+    if (appDataDir.isNotEmpty && _engineExists(appDataDir)) {
+      return appDataDir;
+    }
+
+    final packagedDir = engineDirectory;
+    if (appDataDir.isNotEmpty &&
+        packagedDir.isNotEmpty &&
+        _engineExists(packagedDir)) {
+      await _installEngineToAppData(packagedDir, appDataDir);
+      return appDataDir;
+    }
+
+    return packagedDir;
+  }
+
+  Future<void> _installEngineToAppData(
+    String sourceDir,
+    String targetDir,
+  ) async {
+    final source = Directory(sourceDir);
+    if (!source.existsSync()) return;
+
+    final target = Directory(targetDir);
+    await target.create(recursive: true);
+    await for (final entity in source.list(
+      recursive: false,
+      followLinks: false,
+    )) {
+      final targetPath = p.join(targetDir, p.basename(entity.path));
+      if (entity is File) {
+        await entity.copy(targetPath);
+      } else if (entity is Directory) {
+        await _installEngineToAppData(entity.path, targetPath);
+      }
+    }
+  }
 
   bool get isRunning => _process != null;
 
@@ -88,57 +187,121 @@ class BackendLauncher {
         return;
       }
 
-      final exe = engineExecutable;
+      _port = await _resolveAvailablePort();
+      final baseUrl = DesktopRuntimeConfig.buildBaseUrl(port: _port);
+      ApiConfig.baseUrl = baseUrl;
+      await ApiConfig.saveBaseUrl(baseUrl);
+
+      final engineDir = await _resolveEngineDirectory();
+      final exe = p.join(engineDir, engineBinaryName);
       if (!File(exe).existsSync()) {
-        throw StateError(
-          'Backend engine not found at $exe\n$_syncScriptHint',
-        );
+        throw StateError('Security engine not found at $exe\n$_syncScriptHint');
       }
 
-      if (await _isHealthy()) {
-        debugPrint('[CyberSentinel] Engine already running at $apiBaseUrl');
+      if (await _isHealthyAt(baseUrl)) {
+        debugPrint('[CyberSentinel] Engine already running at $baseUrl');
         return;
       }
 
-      debugPrint('[CyberSentinel] Starting engine: $exe');
+      debugPrint('[CyberSentinel] Starting local backend service: $exe');
       _engineLogTail.clear();
       _process = await Process.start(
         exe,
         const [],
-        workingDirectory: engineDirectory,
+        workingDirectory: engineDir,
+        environment: {
+          ...Platform.environment,
+          'HOST': DesktopRuntimeConfig.host,
+          'PORT': '$_port',
+          'DEBUG': 'false',
+          'RATE_LIMIT_PER_MINUTE': '0',
+        },
       );
 
-      _process!.stderr.transform(const SystemEncoding().decoder).listen(
-        _appendEngineLog,
-      );
-      _process!.stdout.transform(const SystemEncoding().decoder).listen(
-        _appendEngineLog,
-      );
+      // Open (or append) the engine.log next to the engine binary so installed
+      // copies capture runtime output for diagnostics.
+      try {
+        final logFile = File(p.join(engineDir, 'engine.log'));
+        _engineLogFileSink = logFile.openWrite(mode: FileMode.append);
+      } catch (e) {
+        debugPrint('[CyberSentinel] Failed to open engine.log: $e');
+      }
+
+      _process!.stderr.transform(const SystemEncoding().decoder).listen((data) {
+        _appendEngineLog(data);
+        try {
+          _engineLogFileSink?.write(data);
+        } catch (_) {}
+      });
+      _process!.stdout.transform(const SystemEncoding().decoder).listen((data) {
+        _appendEngineLog(data);
+        try {
+          _engineLogFileSink?.write(data);
+        } catch (_) {}
+      });
 
       final exitCompleter = Completer<int>();
-      unawaited(_process!.exitCode.then((code) {
-        debugPrint('[CyberSentinel] Engine exited ($code)');
-        if (!exitCompleter.isCompleted) exitCompleter.complete(code);
-        _process = null;
-      }));
+      unawaited(
+        _process!.exitCode.then((code) {
+          debugPrint('[CyberSentinel] Engine exited ($code)');
+          if (!exitCompleter.isCompleted) exitCompleter.complete(code);
+          _process = null;
+          try {
+            _engineLogFileSink?.flush();
+          } catch (_) {}
+          try {
+            _engineLogFileSink?.close();
+          } catch (_) {}
+          _engineLogFileSink = null;
+        }),
+      );
 
-      final ok = await _waitForHealth(onEarlyExit: exitCompleter.future);
+      final ok = await _waitForHealth(
+        baseUrl,
+        onEarlyExit: exitCompleter.future,
+      );
       if (!ok) {
-        final exitCode = exitCompleter.isCompleted ? await exitCompleter.future : null;
+        final exitCode = exitCompleter.isCompleted
+            ? await exitCompleter.future
+            : null;
         await stop();
         final exitDetail = exitCode == null
-            ? 'The engine process is still running but did not pass the health check.'
+            ? 'The engine process did not finish starting.'
             : 'The engine process exited early (code $exitCode).';
         throw StateError(
-          'Engine did not respond on $apiBaseUrl within $healthTimeout.\n'
+          'Security engine did not respond on $baseUrl within $healthTimeout.\n'
           '$exitDetail\n'
-          'Check engine.env in $engineDirectory\n'
+          'Check the bundled engine files in $engineDir\n'
           '$_engineLogHint',
         );
       }
-      debugPrint('[CyberSentinel] Engine ready at $apiBaseUrl');
+      debugPrint('[CyberSentinel] Backend service ready at $baseUrl');
     } finally {
       _starting = false;
+    }
+  }
+
+  Future<int> _resolveAvailablePort() async {
+    const startPort = DesktopRuntimeConfig.defaultPort;
+    for (var port = startPort; port < startPort + 50; port++) {
+      if (await _isPortAvailable(port)) return port;
+    }
+    throw StateError(
+      'No available desktop runtime port found in the expected range.',
+    );
+  }
+
+  Future<bool> _isPortAvailable(int port) async {
+    try {
+      final socket = await ServerSocket.bind(
+        InternetAddress.loopbackIPv4,
+        port,
+        shared: false,
+      );
+      await socket.close();
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -154,9 +317,19 @@ class BackendLauncher {
         return -1;
       },
     );
+    try {
+      _engineLogFileSink?.flush();
+    } catch (_) {}
+    try {
+      _engineLogFileSink?.close();
+    } catch (_) {}
+    _engineLogFileSink = null;
   }
 
-  Future<bool> _waitForHealth({Future<int>? onEarlyExit}) async {
+  Future<bool> _waitForHealth(
+    String baseUrl, {
+    Future<int>? onEarlyExit,
+  }) async {
     final deadline = DateTime.now().add(healthTimeout);
     while (DateTime.now().isBefore(deadline)) {
       if (onEarlyExit != null) {
@@ -166,7 +339,7 @@ class BackendLauncher {
         ]);
         if (early != null) return false;
       }
-      if (await _isHealthy()) return true;
+      if (await _isHealthyAt(baseUrl)) return true;
       await Future<void>.delayed(healthPollInterval);
     }
     return false;
@@ -176,18 +349,18 @@ class BackendLauncher {
     final base = ApiConfig.baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
     if (base.isEmpty) {
       throw StateError(
-        'Backend URL is not configured.\n'
-        'Start the API with python run.py, then set the URL in Settings.',
+        'Service URL is not configured.\n'
+        'Open Settings and connect CyberSentinel to its service endpoint.',
       );
     }
     final ok = await _isHealthyAt(base);
     if (!ok) {
       throw StateError(
-        'Cannot reach the backend at $base.\n'
-        'Start the FastAPI server (python run.py) and check CORS allows this origin.',
+        'The CyberSentinel service at $base is not responding.\n'
+        'Check that the desktop service is running and reachable.',
       );
     }
-    debugPrint('[CyberSentinel] Remote backend ready at $base');
+    debugPrint('[CyberSentinel] Remote service ready at $base');
   }
 
   Future<bool> _isHealthyAt(String baseUrl) async {
@@ -200,6 +373,4 @@ class BackendLauncher {
       return false;
     }
   }
-
-  Future<bool> _isHealthy() async => _isHealthyAt(apiBaseUrl);
 }

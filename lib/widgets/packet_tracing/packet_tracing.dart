@@ -706,39 +706,53 @@ class _PacketTracingScreenState extends State<PacketTracingScreen> {
     }
 
     return FadeSlideIn(
-      child: Padding(
-        padding: const EdgeInsets.all(_pagePad),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const PageHeader(
-              title: 'Live packet tracing',
-              subtitle: 'Capture network traffic, classify flows in real time, and inspect packet details.',
-              icon: Icons.account_tree_outlined,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final content = Padding(
+            padding: const EdgeInsets.all(_pagePad),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const PageHeader(
+                  title: 'Live packet tracing',
+                  subtitle: 'Capture network traffic, classify flows in real time, and inspect packet details.',
+                  icon: Icons.account_tree_outlined,
+                ),
+                _buildControlBar(),
+                const SizedBox(height: _sectionGap),
+                Expanded(
+                  child: MediaQuery.sizeOf(context).width >= 1024
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(flex: 2, child: _buildStreamPanel()),
+                            SizedBox(width: _gridGap),
+                            Expanded(child: _buildDetailsPanel()),
+                          ],
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(flex: 3, child: _buildStreamPanel()),
+                            SizedBox(height: _gridGap),
+                            Expanded(flex: 2, child: _buildDetailsPanel()),
+                          ],
+                        ),
+                ),
+              ],
             ),
-            _buildControlBar(),
-            const SizedBox(height: _sectionGap),
-            Expanded(
-              child: MediaQuery.sizeOf(context).width >= 1024
-                  ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(flex: 2, child: _buildStreamPanel()),
-                        SizedBox(width: _gridGap),
-                        Expanded(child: _buildDetailsPanel()),
-                      ],
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(flex: 3, child: _buildStreamPanel()),
-                        SizedBox(height: _gridGap),
-                        Expanded(flex: 2, child: _buildDetailsPanel()),
-                      ],
-                    ),
-            ),
-          ],
-        ),
+          );
+
+          if (constraints.maxHeight < 850) {
+            return SingleChildScrollView(
+              child: SizedBox(
+                height: 850,
+                child: content,
+              ),
+            );
+          }
+          return content;
+        },
       ),
     );
   }

@@ -4,7 +4,7 @@ import 'package:cybersentinel/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Floating AI copilot — global on all authenticated app screens.
+/// Floating CyberSentinel chatbot — global on all authenticated app screens.
 class CopilotAssistantOverlay extends StatefulWidget {
   const CopilotAssistantOverlay({
     super.key,
@@ -46,10 +46,10 @@ class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
     _messages.add(
       _ChatMessage(
         text: name.isNotEmpty
-            ? 'Hello, $name. I\'m CyberSentinel Copilot — your AI security analyst. '
-                  'Ask about threats, alerts, captures, or investigation workflows.'
-            : 'Hello. I\'m CyberSentinel Copilot — your AI security analyst. '
-                  'Ask about threats, alerts, captures, or investigation workflows.',
+            ? 'Hello, $name. I\'m ready to analyze the live security data connected to this app. '
+                  'Ask about current threats, alerts, captures, or investigations.'
+            : 'Hello. I\'m ready to analyze the live security data connected to this app. '
+                  'Ask about current threats, alerts, captures, or investigations.',
         isUser: false,
         isSystem: true,
       ),
@@ -87,29 +87,6 @@ class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
     });
   }
 
-  bool _isGreeting(String text) {
-    final n = text.trim().toLowerCase().replaceAll(RegExp(r'[!?.]+$'), '');
-    return const {
-      'hi',
-      'hello',
-      'hey',
-      'hi there',
-      'hello there',
-      'good morning',
-      'good afternoon',
-    }.contains(n);
-  }
-
-  String _localGreetingReply() {
-    final name = _firstName(AuthService.instance.email);
-    if (name.isNotEmpty) {
-      return 'Hi $name — good to see you. I can help with threat scoring, firewall alerts, '
-          'live capture, IP reputation, and report summaries. What would you like to investigate?';
-    }
-    return 'Hi — good to see you. I can help with threat scoring, firewall alerts, '
-        'live capture, IP reputation, and report summaries. What would you like to investigate?';
-  }
-
   String _extractAnswer(Map<String, dynamic> data) {
     for (final key in ['answer', 'response', 'result', 'message', 'detail']) {
       final value = data[key];
@@ -134,11 +111,9 @@ class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
     _scrollToBottom();
 
     try {
-      final reply = _isGreeting(text)
-          ? _localGreetingReply()
-          : _extractAnswer(
-              await ApiService.instance.askCopilot(question: text),
-            );
+      final reply = _extractAnswer(
+        await ApiService.instance.askCopilot(question: text),
+      );
 
       if (!mounted) return;
       setState(() {
@@ -150,11 +125,10 @@ class _CopilotAssistantOverlayState extends State<CopilotAssistantOverlay>
       setState(() {
         _messages.add(
           _ChatMessage(
-            text: _isGreeting(text)
-                ? _localGreetingReply()
-                : 'I couldn\'t reach the analysis service right now. '
-                      'Please verify the backend is running, then try again.\n\n'
-                      'Error: ${e.toString().replaceFirst('Exception: ', '')}',
+            text:
+                'I couldn\'t reach the analysis service right now. '
+                'Please try again in a moment.\n\n'
+                'Error: ${e.toString().replaceFirst('Exception: ', '')}',
             isUser: false,
             isError: true,
           ),
@@ -322,7 +296,7 @@ class _PanelHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Security Copilot',
+                  'CyberSentinel Chatbot',
                   style: GoogleFonts.inter(
                     color: AppColors.textPrimary,
                     fontSize: 15,
@@ -330,7 +304,7 @@ class _PanelHeader extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'AI-assisted investigation',
+                  'AI security assistant',
                   style: GoogleFonts.inter(
                     color: AppColors.textMuted,
                     fontSize: 11,

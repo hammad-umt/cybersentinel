@@ -14,19 +14,22 @@ class ApiService {
   static final instance = ApiService._();
 
   Map<String, String> get _headers => {
-        ...ApiConfig.authHeaders,
-        'Content-Type': 'application/json',
-      };
+    ...ApiConfig.authHeaders,
+    'Content-Type': 'application/json',
+  };
 
   Map<String, String> get _authOnlyHeaders => ApiConfig.authHeaders;
 
   Uri _uri(String path, [Map<String, String>? query]) {
-    return Uri.parse('${ApiConfig.baseUrl}$path')
-        .replace(queryParameters: query);
+    return Uri.parse(
+      '${ApiConfig.baseUrl}$path',
+    ).replace(queryParameters: query);
   }
 
-  Future<Map<String, dynamic>> _get(String path,
-      {Map<String, String>? query}) async {
+  Future<Map<String, dynamic>> _get(
+    String path, {
+    Map<String, String>? query,
+  }) async {
     final response = await http.get(_uri(path, query), headers: _headers);
     return _parseJson(response);
   }
@@ -59,9 +62,7 @@ class ApiService {
     if (response.statusCode == 401) {
       AuthService.instance.handleUnauthorized();
       final detail = data?['detail']?.toString();
-      throw AuthException(
-        detail ?? 'Session expired. Please log in again.',
-      );
+      throw AuthException(detail ?? 'Session expired. Please log in again.');
     }
 
     if (response.statusCode >= 400 || data?['success'] == false) {
@@ -83,6 +84,8 @@ class ApiService {
     Map<String, dynamic> data, {
     required List<String> keys,
   }) {
+    if (data.isEmpty) return [];
+
     for (final key in keys) {
       final value = data[key];
       if (value is List) {
@@ -91,13 +94,31 @@ class ApiService {
             if (item is Map) Map<String, dynamic>.from(item),
         ];
       }
+      if (value is Map<String, dynamic>) {
+        return extractList(value, keys: keys);
+      }
+    }
+
+    for (final key in ['items', 'results', 'events', 'packets', 'data']) {
+      final value = data[key];
+      if (value is List) {
+        return [
+          for (final item in value)
+            if (item is Map) Map<String, dynamic>.from(item),
+        ];
+      }
+      if (value is Map<String, dynamic>) {
+        return extractList(value, keys: keys);
+      }
     }
 
     final nested = data['data'];
-    if (nested is Map<String, dynamic>) {
-      return extractList(nested, keys: keys);
+    if (nested is List) {
+      return [
+        for (final item in nested)
+          if (item is Map) Map<String, dynamic>.from(item),
+      ];
     }
-
     return [];
   }
 
@@ -121,10 +142,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> getTopThreats({int limit = 10}) async {
     final response = await http
-        .get(
-          _uri('/api/v1/threat/top', {'limit': '$limit'}),
-          headers: _headers,
-        )
+        .get(_uri('/api/v1/threat/top', {'limit': '$limit'}), headers: _headers)
         .timeout(const Duration(seconds: 15));
     return _parseJson(response);
   }
@@ -164,8 +182,20 @@ class ApiService {
   Future<Map<String, dynamic>> acknowledgeAlert(String alertId) =>
       _patch('/api/v1/firewall/alerts/$alertId/acknowledge');
 
-  Future<Map<String, dynamic>> getFirewallIntel(String ip) =>
-      _get('/api/v1/firewall/intel/ip/$ip');
+  Future<Map<String, dynamic>> getFirewallIntel(String ip) async {
+    final headers = Map<String, String>.from(_headers);
+    try {
+      final abuseKey = await ApiConfig.loadAbuseIpDbKey();
+      if (abuseKey != null && abuseKey.isNotEmpty) {
+        headers['X-AbuseIPDB-Key'] = abuseKey;
+      }
+    } catch (_) {}
+    final url = '${ApiConfig.baseUrl}/api/v1/firewall/intel/ip/$ip';
+    final response = await http
+        .get(Uri.parse(url), headers: headers)
+        .timeout(const Duration(seconds: 15));
+    return _parseJson(response);
+  }
 
   /// IP reputation from AbuseIPDB + GeoIP (same backend route).
   Future<IpGeoIntel?> getIpGeoIntel(String ip) async {
@@ -173,10 +203,8 @@ class ApiService {
     return IpGeoIntel.fromResponse(data);
   }
 
-  Future<Map<String, dynamic>> startFirewallMonitor() => _post(
-        '/api/v1/firewall/monitor/start',
-        body: {},
-      );
+  Future<Map<String, dynamic>> startFirewallMonitor() =>
+      _post('/api/v1/firewall/monitor/start', body: {});
 
   Future<Map<String, dynamic>> stopFirewallMonitor() =>
       _post('/api/v1/firewall/monitor/stop', body: {});
@@ -193,11 +221,9 @@ class ApiService {
       _uri('/api/v1/firewall/analyze', {'source': source}),
     );
     request.headers.addAll(_authOnlyHeaders);
-    request.files.add(http.MultipartFile.fromBytes(
-      'file',
-      file.bytes!,
-      filename: file.name,
-    ));
+    request.files.add(
+      http.MultipartFile.fromBytes('file', file.bytes!, filename: file.name),
+    );
 
     final streamed = await request.send();
     final response = await http.Response.fromStream(streamed);
@@ -230,14 +256,16 @@ class ApiService {
     int timeoutSeconds = 30,
     String bpfFilter = '',
     bool useTshark = false,
-  }) =>
-      _post('/api/v1/capture/start', body: {
-        'interface_index': interfaceIndex,
-        'packet_limit': packetLimit,
-        'timeout_seconds': timeoutSeconds,
-        'bpf_filter': bpfFilter,
-        'use_tshark': useTshark,
-      });
+  }) => _post(
+    '/api/v1/capture/start',
+    body: {
+      'interface_index': interfaceIndex,
+      'packet_limit': packetLimit,
+      'timeout_seconds': timeoutSeconds,
+      'bpf_filter': bpfFilter,
+      'use_tshark': useTshark,
+    },
+  );
 
   Future<Map<String, dynamic>> stopCapture() =>
       _post('/api/v1/capture/stop', body: {});
@@ -253,11 +281,15 @@ class ApiService {
   Future<Map<String, dynamic>> scanFile(PlatformFile file) async {
     final request = http.MultipartRequest('POST', _uri('/api/v1/intel/file'));
     request.headers.addAll(_authOnlyHeaders);
-    request.files.add(http.MultipartFile.fromBytes(
-      'file',
-      file.bytes!,
-      filename: file.name,
-    ));
+    try {
+      final vtKey = await ApiConfig.loadVirusTotalKey();
+      if (vtKey != null && vtKey.isNotEmpty) {
+        request.headers['X-VT-API-Key'] = vtKey;
+      }
+    } catch (_) {}
+    request.files.add(
+      http.MultipartFile.fromBytes('file', file.bytes!, filename: file.name),
+    );
 
     final streamed = await request.send().timeout(const Duration(seconds: 60));
     final response = await http.Response.fromStream(streamed);
@@ -269,10 +301,16 @@ class ApiService {
     if (trimmed.isEmpty) {
       throw Exception('URL is required');
     }
+    final headers = Map<String, String>.from(_headers);
+    try {
+      final vtKey = await ApiConfig.loadVirusTotalKey();
+      if (vtKey != null && vtKey.isNotEmpty) headers['X-VT-API-Key'] = vtKey;
+    } catch (_) {}
+
     final response = await http
         .post(
           _uri('/api/v1/intel/url'),
-          headers: _headers,
+          headers: headers,
           body: jsonEncode({'url': trimmed}),
         )
         .timeout(const Duration(seconds: 45));
@@ -284,11 +322,35 @@ class ApiService {
   Future<Map<String, dynamic>> askCopilot({
     required String question,
     String? ip,
-  }) =>
-      _post('/api/v1/copilot/ask', body: {
-        'question': question,
-        if (ip != null) 'ip': ip,
-      });
+  }) async {
+    final body = <String, dynamic>{'question': question};
+    if (ip != null) {
+      body['ip'] = ip;
+    }
+
+    final baseUrl = ApiConfig.chatbotBaseUrl.trim().replaceAll(
+      RegExp(r'/+$'),
+      '',
+    );
+    final url = Uri.parse('$baseUrl/api/v1/copilot/ask');
+
+    try {
+      final response = await http
+          .post(url, headers: _headers, body: jsonEncode(body))
+          .timeout(const Duration(seconds: 45));
+      if (response.statusCode == 404) {
+        throw Exception('Copilot endpoint not found at $url');
+      }
+      return _parseJson(response);
+    } catch (error) {
+      if (error is http.ClientException ||
+          error is FormatException ||
+          error is Exception) {
+        throw Exception('Copilot request failed: ${error.toString()}');
+      }
+      rethrow;
+    }
+  }
 
   // --- Response ---
 
@@ -298,14 +360,16 @@ class ApiService {
     required String reason,
     String? requestedBy,
     bool execute = false,
-  }) =>
-      _post('/api/v1/response/actions', body: {
-        'target_ip': targetIp,
-        'action': action,
-        'reason': reason,
-        'requested_by': requestedBy ?? AuthService.instance.email,
-        'execute': execute,
-      });
+  }) => _post(
+    '/api/v1/response/actions',
+    body: {
+      'target_ip': targetIp,
+      'action': action,
+      'reason': reason,
+      'requested_by': requestedBy ?? AuthService.instance.email,
+      'execute': execute,
+    },
+  );
 
   // --- Reports ---
 

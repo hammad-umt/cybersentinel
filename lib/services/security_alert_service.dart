@@ -28,14 +28,14 @@ class SecurityAlert {
   final bool isRead;
 
   SecurityAlert copyWith({bool? isRead}) => SecurityAlert(
-        id: id,
-        title: title,
-        message: message,
-        severity: severity,
-        source: source,
-        timestamp: timestamp,
-        isRead: isRead ?? this.isRead,
-      );
+    id: id,
+    title: title,
+    message: message,
+    severity: severity,
+    source: source,
+    timestamp: timestamp,
+    isRead: isRead ?? this.isRead,
+  );
 }
 
 class SecurityAlertService extends ChangeNotifier {
@@ -45,6 +45,7 @@ class SecurityAlertService extends ChangeNotifier {
 
   final List<SecurityAlert> alerts = [];
   final Set<String> _seenIds = {};
+  final Set<String> _dismissedFingerprints = {};
   Timer? _pollTimer;
   Timer? _bannerTimer;
   bool _initialized = false;
@@ -79,9 +80,13 @@ class SecurityAlertService extends ChangeNotifier {
   void _onCaptureUpdate() {
     final capture = PacketCaptureService.instance;
     for (final packet in capture.packets) {
-      if (packet.status != 'suspicious' && packet.status != 'malicious') continue;
+      if (packet.status != 'suspicious' && packet.status != 'malicious') {
+        continue;
+      }
       final id = 'packet:${packet.key}:${packet.status}';
-      if (_seenIds.contains(id)) continue;
+      if (_seenIds.contains(id)) {
+        continue;
+      }
       _pushAlert(
         id: id,
         title: 'Suspicious traffic detected',
@@ -137,6 +142,13 @@ class SecurityAlertService extends ChangeNotifier {
     required String source,
     bool showToast = true,
   }) {
+    final fingerprint = _alertFingerprint(
+      title: title,
+      message: message,
+      severity: severity,
+      source: source,
+    );
+    if (_dismissedFingerprints.contains(fingerprint)) return;
     _seenIds.add(id);
     final alert = SecurityAlert(
       id: id,
@@ -158,6 +170,20 @@ class SecurityAlertService extends ChangeNotifier {
     notifyListeners();
   }
 
+  String _alertFingerprint({
+    required String title,
+    required String message,
+    required String severity,
+    required String source,
+  }) {
+    return [
+      source,
+      severity,
+      title,
+      message,
+    ].map((part) => part.trim().toLowerCase()).join('|');
+  }
+
   void _showBanner(SecurityAlert alert) {
     bannerAlert = alert;
     _bannerTimer?.cancel();
@@ -175,7 +201,17 @@ class SecurityAlertService extends ChangeNotifier {
   }
 
   void dismissAlert(String id) {
-    alerts.removeWhere((a) => a.id == id);
+    final index = alerts.indexWhere((a) => a.id == id);
+    if (index == -1) return;
+    _dismissedFingerprints.add(
+      _alertFingerprint(
+        title: alerts[index].title,
+        message: alerts[index].message,
+        severity: alerts[index].severity,
+        source: alerts[index].source,
+      ),
+    );
+    alerts.removeAt(index);
     notifyListeners();
   }
 
@@ -187,8 +223,19 @@ class SecurityAlertService extends ChangeNotifier {
   }
 
   void clearAlerts() {
+    for (final alert in alerts) {
+      _dismissedFingerprints.add(
+        _alertFingerprint(
+          title: alert.title,
+          message: alert.message,
+          severity: alert.severity,
+          source: alert.source,
+        ),
+      );
+    }
     alerts.clear();
     bannerAlert = null;
+    _bannerTimer?.cancel();
     notifyListeners();
   }
 }

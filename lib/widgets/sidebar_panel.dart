@@ -1,4 +1,3 @@
-import 'package:cybersentinel/services/api_service.dart';
 import 'package:flutter/material.dart';
 
 /// Legacy no-op — navigation is handled by [MainAppShell] in app_shell.dart.
@@ -7,7 +6,11 @@ Widget buildSidebarPanel(BuildContext context, int activePageIndex) {
 }
 
 class DashboardLayout extends StatelessWidget {
-  const DashboardLayout({super.key, required this.child, this.currentPageIndex = 0});
+  const DashboardLayout({
+    super.key,
+    required this.child,
+    this.currentPageIndex = 0,
+  });
   final Widget child;
   final int currentPageIndex;
   @override
@@ -32,6 +35,8 @@ Widget buildTopNavbar(BuildContext context, String pageTitle) {
             fontSize: 24,
             fontWeight: FontWeight.w600,
           ),
+          maxLines: 2,
+          overflow: TextOverflow.visible,
         ),
         const Spacer(),
         Row(
@@ -180,22 +185,11 @@ class SidebarPanel extends StatefulWidget {
 
 class _SidebarPanelState extends State<SidebarPanel> {
   late int _activeIndex;
-  bool _backendOnline = false;
 
   @override
   void initState() {
     super.initState();
     _activeIndex = widget.activePageIndex;
-    _checkHealth();
-  }
-
-  Future<void> _checkHealth() async {
-    try {
-      await ApiService.instance.getHealth();
-      if (mounted) setState(() => _backendOnline = true);
-    } catch (_) {
-      if (mounted) setState(() => _backendOnline = false);
-    }
   }
 
   @override
@@ -351,7 +345,7 @@ class _SidebarPanelState extends State<SidebarPanel> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    'System Status',
+                    'App Status',
                     style: TextStyle(
                       color: Color(0xFF98A2B3),
                       fontSize: 13,
@@ -360,20 +354,16 @@ class _SidebarPanelState extends State<SidebarPanel> {
                   ),
                   Row(
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.circle,
-                        color: _backendOnline
-                            ? const Color(0xFF10B981)
-                            : const Color(0xFFFF3B57),
+                        color: Color(0xFF10B981),
                         size: 9,
                       ),
                       const SizedBox(width: 6),
-                      Text(
-                        _backendOnline ? 'ONLINE' : 'OFFLINE',
+                      const Text(
+                        'READY',
                         style: TextStyle(
-                          color: _backendOnline
-                              ? const Color(0xFF10B981)
-                              : const Color(0xFFFF4D61),
+                          color: Color(0xFF10B981),
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                         ),
@@ -437,8 +427,8 @@ class _NavTile extends StatelessWidget {
                 const SizedBox(width: 12),
                 Text(
                   label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
+                  overflow: TextOverflow.visible,
                   style: TextStyle(
                     color: textColor,
                     fontSize: 14,

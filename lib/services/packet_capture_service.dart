@@ -64,7 +64,7 @@ class PacketCaptureService extends ChangeNotifier {
           ? rec
           : int.tryParse(rec?.toString() ?? '');
       autoSelectInterface();
-      lastError = interfaces.isEmpty ? 'No capture interfaces found on backend' : null;
+      lastError = interfaces.isEmpty ? 'No capture devices found' : null;
     } catch (e) {
       if (interfaces.isEmpty) {
         lastError = e.toString().replaceFirst('Exception: ', '');
@@ -94,7 +94,9 @@ class PacketCaptureService extends ChangeNotifier {
 
     if (recommendedInterfaceIndex != null &&
         interfaces.any((i) => i.index == recommendedInterfaceIndex)) {
-      final rec = interfaces.firstWhere((i) => i.index == recommendedInterfaceIndex);
+      final rec = interfaces.firstWhere(
+        (i) => i.index == recommendedInterfaceIndex,
+      );
       if (rec.isConnected) {
         selectedInterfaceIndex = rec.index;
         notifyListeners();
@@ -115,7 +117,8 @@ class PacketCaptureService extends ChangeNotifier {
 
     if (best == null || bestScore < 0) {
       selectedInterfaceIndex = null;
-      lastError = 'No connected network interface found (check Wi‑Fi or Ethernet).';
+      lastError =
+          'No connected network interface found (check Wi‑Fi or Ethernet).';
       notifyListeners();
       return false;
     }
@@ -252,8 +255,11 @@ class PacketCaptureService extends ChangeNotifier {
       final status = await ApiService.instance.getCaptureStatus();
       isCapturing = _readIsRunning(status);
       activeInterfaceName = status['interface']?.toString();
-      packetsCaptured = _readInt(status['packets_captured'] ?? status['packets_classified']);
-      statusMessage = status['message']?.toString() ??
+      packetsCaptured = _readInt(
+        status['packets_captured'] ?? status['packets_classified'],
+      );
+      statusMessage =
+          status['message']?.toString() ??
           (isCapturing
               ? 'Capture running on ${activeInterfaceName ?? selectedInterface?.name ?? 'interface'}'
               : 'Capture stopped');
@@ -288,9 +294,11 @@ class PacketCaptureService extends ChangeNotifier {
         useTshark: useTshark,
       );
       isCapturing = _readIsRunning(res);
-      activeInterfaceName = res['interface']?.toString() ?? selectedInterface?.name;
+      activeInterfaceName =
+          res['interface']?.toString() ?? selectedInterface?.name;
       packetsCaptured = _readInt(res['packets_captured']);
-      statusMessage = res['message']?.toString() ??
+      statusMessage =
+          res['message']?.toString() ??
           'Capture started on ${activeInterfaceName ?? selectedInterface?.name ?? 'interface'}';
       await refreshPackets(silent: true, force: true);
     } catch (e) {
@@ -339,7 +347,10 @@ class PacketCaptureService extends ChangeNotifier {
       try {
         final data = await ApiService.instance.getCapturedPackets();
         packetsCaptured = _readInt(data['total'] ?? data['packets_captured']);
-        for (final item in ApiService.extractList(data, keys: const ['packets', 'events', 'results', 'data'])) {
+        for (final item in ApiService.extractList(
+          data,
+          keys: const ['packets', 'events', 'results', 'data'],
+        )) {
           final packet = LivePacket.fromApi(item, fromCapture: true);
           merged[packet.key] = packet;
         }
@@ -354,8 +365,13 @@ class PacketCaptureService extends ChangeNotifier {
 
     if (_shouldFetchEvents(force: force)) {
       try {
-        final events = await ApiService.instance.getPacketEvents(pageSize: _eventsPageSize);
-        for (final item in ApiService.extractList(events, keys: const ['events', 'results', 'data', 'packets'])) {
+        final events = await ApiService.instance.getPacketEvents(
+          pageSize: _eventsPageSize,
+        );
+        for (final item in ApiService.extractList(
+          events,
+          keys: const ['events', 'results', 'data', 'packets'],
+        )) {
           final packet = LivePacket.fromApi(item, fromCapture: false);
           merged.putIfAbsent(packet.key, () => packet);
         }
@@ -376,7 +392,8 @@ class PacketCaptureService extends ChangeNotifier {
     }
 
     if (merged.isNotEmpty) {
-      packets = merged.values.toList()..sort((a, b) => b.sortKey.compareTo(a.sortKey));
+      packets = merged.values.toList()
+        ..sort((a, b) => b.sortKey.compareTo(a.sortKey));
     }
     isLoading = false;
     notifyListeners();
@@ -458,20 +475,26 @@ class CaptureInterface {
     ];
   }
 
-  factory CaptureInterface.fromApi(Map<String, dynamic> m, {required int fallbackIndex}) {
-    final indexValue = m['index'] ?? m['interface_index'] ?? m['id'] ?? fallbackIndex;
+  factory CaptureInterface.fromApi(
+    Map<String, dynamic> m, {
+    required int fallbackIndex,
+  }) {
+    final indexValue =
+        m['index'] ?? m['interface_index'] ?? m['id'] ?? fallbackIndex;
     final index = indexValue is int
         ? indexValue
         : int.tryParse(indexValue.toString()) ?? fallbackIndex;
 
-    final name = m['name'] ??
+    final name =
+        m['name'] ??
         m['interface'] ??
         m['display_name'] ??
         m['friendly_name'] ??
         m['description'] ??
         'Interface $index';
 
-    final description = m['description']?.toString() ??
+    final description =
+        m['description']?.toString() ??
         m['friendly_name']?.toString() ??
         m['type']?.toString() ??
         '';
@@ -521,14 +544,22 @@ class LivePacket {
 
   String get key => '$ip|$port|$time|$protocol';
 
-  static LivePacket fromApi(Map<String, dynamic> p, {required bool fromCapture}) {
-    final prediction = p['prediction'] ??
+  static LivePacket fromApi(
+    Map<String, dynamic> p, {
+    required bool fromCapture,
+  }) {
+    final prediction =
+        p['prediction'] ??
         p['risk_level'] ??
         p['classification'] ??
         p['label'] ??
         'Normal';
     final timestamp = p['timestamp'] ?? p['captured_at'] ?? p['created_at'];
-    final raw = p['raw_hex']?.toString() ?? p['hex']?.toString() ?? p['raw']?.toString() ?? '';
+    final raw =
+        p['raw_hex']?.toString() ??
+        p['hex']?.toString() ??
+        p['raw']?.toString() ??
+        '';
     return LivePacket(
       ip: p['src_ip']?.toString() ?? p['ip']?.toString() ?? '-',
       port: (p['dst_port'] ?? p['port'])?.toString() ?? '-',
@@ -543,10 +574,14 @@ class LivePacket {
 
   static String _normalizeStatus(String raw) {
     final s = raw.toLowerCase();
-    if (s.contains('malicious') || s.contains('critical') || s.contains('high')) {
+    if (s.contains('malicious') ||
+        s.contains('critical') ||
+        s.contains('high')) {
       return 'malicious';
     }
-    if (s.contains('suspicious') || s.contains('medium') || s.contains('warn')) {
+    if (s.contains('suspicious') ||
+        s.contains('medium') ||
+        s.contains('warn')) {
       return 'suspicious';
     }
     return 'normal';
@@ -569,8 +604,15 @@ class LivePacket {
   }
 
   static int? _inferPacketSize(Map<String, dynamic> p, String raw) {
-    final direct = p['pkt_size'] ?? p['packet_size'] ?? p['size'] ?? p['len'] ?? p['length'];
-    final directN = direct is num ? direct.toInt() : int.tryParse(direct?.toString() ?? '');
+    final direct =
+        p['pkt_size'] ??
+        p['packet_size'] ??
+        p['size'] ??
+        p['len'] ??
+        p['length'];
+    final directN = direct is num
+        ? direct.toInt()
+        : int.tryParse(direct?.toString() ?? '');
     if (directN != null && directN > 0) return directN;
 
     // Fallback: if we have a hex payload (common in stored events), infer bytes.

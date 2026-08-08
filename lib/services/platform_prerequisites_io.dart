@@ -18,12 +18,12 @@ String get bootTitle => 'Starting CyberSentinel…';
 
 String get bootSubtitle {
   if (Platform.isWindows) {
-    return 'Starting local security engine on http://127.0.0.1:8000';
+    return 'Preparing your desktop workspace';
   }
   if (Platform.isLinux) {
-    return 'Starting local security engine';
+    return 'Preparing your desktop workspace';
   }
-  return 'Starting local security engine';
+  return 'Preparing your desktop workspace';
 }
 
 bool get supportsDesktopEngine => Platform.isWindows || Platform.isLinux;

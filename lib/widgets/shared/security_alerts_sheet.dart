@@ -96,7 +96,11 @@ class _AlertsPanelScaffold extends StatelessWidget {
                         color: AppColors.cyan.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Icon(Icons.notifications_active, color: AppColors.cyanLight, size: 22),
+                      child: Icon(
+                        Icons.notifications_active,
+                        color: AppColors.cyanLight,
+                        size: 22,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -114,8 +118,11 @@ class _AlertsPanelScaffold extends StatelessWidget {
                           Text(
                             alerts.isEmpty
                                 ? 'Monitoring packets & firewall events'
-                                : '${alerts.length} recent alert${alerts.length == 1 ? '' : 's'}',
-                            style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12),
+                                : '${alerts.length} recent alert${alerts.length == 1 ? '' : 's'} ready to review',
+                            style: GoogleFonts.inter(
+                              color: AppColors.textMuted,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
@@ -124,11 +131,17 @@ class _AlertsPanelScaffold extends StatelessWidget {
                       TextButton(
                         onPressed: service.clearAlerts,
                         style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
-                        child: Text('Clear all', style: TextStyle(color: AppColors.cyanLight)),
+                        child: Text(
+                          'Clear all',
+                          style: TextStyle(color: AppColors.cyanLight),
+                        ),
                       ),
                     const SizedBox(width: 4),
                     IconButton(
@@ -148,7 +161,11 @@ class _AlertsPanelScaffold extends StatelessWidget {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.verified_user_outlined, color: AppColors.textDim, size: 48),
+                              Icon(
+                                Icons.verified_user_outlined,
+                                color: AppColors.textDim,
+                                size: 48,
+                              ),
                               const SizedBox(height: 16),
                               Text(
                                 'No alerts yet',
@@ -162,7 +179,11 @@ class _AlertsPanelScaffold extends StatelessWidget {
                               Text(
                                 'Suspicious packets and firewall threats will appear here with real-time notifications.',
                                 textAlign: TextAlign.center,
-                                style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13, height: 1.4),
+                                style: GoogleFonts.inter(
+                                  color: AppColors.textMuted,
+                                  fontSize: 13,
+                                  height: 1.4,
+                                ),
                               ),
                             ],
                           ),
@@ -195,8 +216,12 @@ class _AlertCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _severityColor(alert.severity);
-    final sourceLabel = alert.source == 'firewall' ? 'Firewall' : 'Packet capture';
-    final sourceIcon = alert.source == 'firewall' ? Icons.shield_outlined : Icons.lan_outlined;
+    final sourceLabel = _friendlySource(alert.source);
+    final sourceIcon = alert.source == 'firewall'
+        ? Icons.shield_outlined
+        : Icons.lan_outlined;
+    final ip = _extractIp(alert.message);
+    final timeLabel = _formatTime(alert.timestamp);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -213,7 +238,9 @@ class _AlertCard extends StatelessWidget {
               width: 4,
               decoration: BoxDecoration(
                 color: color,
-                borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+                borderRadius: const BorderRadius.horizontal(
+                  left: Radius.circular(12),
+                ),
               ),
             ),
             Expanded(
@@ -225,7 +252,10 @@ class _AlertCard extends StatelessWidget {
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: color.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
@@ -245,12 +275,18 @@ class _AlertCard extends StatelessWidget {
                         const SizedBox(width: 4),
                         Text(
                           sourceLabel,
-                          style: GoogleFonts.inter(color: AppColors.textDim, fontSize: 11),
+                          style: GoogleFonts.inter(
+                            color: AppColors.textDim,
+                            fontSize: 11,
+                          ),
                         ),
                         const Spacer(),
                         Text(
-                          _formatTime(alert.timestamp),
-                          style: GoogleFonts.inter(color: AppColors.textDim, fontSize: 11),
+                          timeLabel,
+                          style: GoogleFonts.inter(
+                            color: AppColors.textDim,
+                            fontSize: 11,
+                          ),
                         ),
                       ],
                     ),
@@ -266,28 +302,59 @@ class _AlertCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       alert.message,
-                      style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13, height: 1.35),
+                      style: GoogleFonts.inter(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        height: 1.35,
+                      ),
+                      maxLines: 4,
+                      overflow: TextOverflow.visible,
                     ),
                     const SizedBox(height: 10),
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
-                        if (_extractIp(alert.message) != null)
+                        _DetailChip(icon: sourceIcon, label: sourceLabel),
+                        _DetailChip(icon: Icons.access_time, label: timeLabel),
+                        _DetailChip(
+                          icon: Icons.flag,
+                          label: _severityLabel(alert.severity),
+                        ),
+                        if (ip != null)
+                          _DetailChip(icon: Icons.public, label: ip),
+                        if (ip != null)
                           TextButton.icon(
                             onPressed: () {
                               Navigator.pop(context);
-                              NavigationIntentService.instance
-                                  .openIpAnalysis(_extractIp(alert.message)!);
+                              NavigationIntentService.instance.openIpAnalysis(
+                                ip,
+                              );
                             },
-                            icon: Icon(Icons.open_in_new, size: 14, color: AppColors.cyanLight),
-                            label: Text('Investigate IP', style: TextStyle(color: AppColors.cyanLight)),
+                            icon: Icon(
+                              Icons.open_in_new,
+                              size: 14,
+                              color: AppColors.cyanLight,
+                            ),
+                            label: Text(
+                              'Inspect IP',
+                              style: TextStyle(color: AppColors.cyanLight),
+                            ),
                           ),
-                        const Spacer(),
-                        IconButton(
-                          onPressed: onDismiss,
-                          icon: Icon(Icons.close, size: 18, color: AppColors.textDim),
-                          tooltip: 'Dismiss',
-                        ),
                       ],
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        onPressed: onDismiss,
+                        icon: Icon(
+                          Icons.close,
+                          size: 18,
+                          color: AppColors.textDim,
+                        ),
+                        tooltip: 'Dismiss',
+                      ),
                     ),
                   ],
                 ),
@@ -297,6 +364,34 @@ class _AlertCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _friendlySource(String source) {
+    switch (source) {
+      case 'firewall':
+        return 'Firewall';
+      case 'packet_capture':
+        return 'Packet capture';
+      default:
+        return 'System';
+    }
+  }
+
+  String _severityLabel(String severity) {
+    switch (severity.toLowerCase()) {
+      case 'critical':
+        return 'Critical';
+      case 'high':
+        return 'High priority';
+      case 'medium':
+        return 'Watch closely';
+      case 'malicious':
+        return 'Malicious';
+      case 'suspicious':
+        return 'Suspicious';
+      default:
+        return severity.toUpperCase();
+    }
   }
 
   String? _extractIp(String message) {
@@ -327,9 +422,47 @@ class _AlertCard extends StatelessWidget {
   }
 }
 
+class _DetailChip extends StatelessWidget {
+  const _DetailChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.border,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.borderElevated),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: AppColors.cyanLight),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              color: AppColors.textMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Floating toast shown briefly when a new alert arrives.
 class SecurityAlertToast extends StatelessWidget {
-  const SecurityAlertToast({super.key, required this.alert, required this.onDismiss});
+  const SecurityAlertToast({
+    super.key,
+    required this.alert,
+    required this.onDismiss,
+  });
 
   final SecurityAlert alert;
   final VoidCallback onDismiss;
@@ -340,6 +473,9 @@ class SecurityAlertToast extends StatelessWidget {
         ? AppColors.redLight
         : AppColors.orangeLight;
     final maxW = MediaQuery.sizeOf(context).width - 32;
+    final ip = _extractIp(alert.message);
+    final source = _friendlySource(alert.source);
+    final timeLabel = _formatTime(alert.timestamp);
 
     return Material(
       elevation: 8,
@@ -364,6 +500,8 @@ class SecurityAlertToast extends StatelessWidget {
                 children: [
                   Text(
                     alert.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.visible,
                     style: GoogleFonts.inter(
                       color: AppColors.textPrimary,
                       fontWeight: FontWeight.w700,
@@ -373,10 +511,46 @@ class SecurityAlertToast extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     alert.message,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12),
+                    maxLines: 6,
+                    overflow: TextOverflow.visible,
+                    style: GoogleFonts.inter(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                    ),
                   ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _DetailChip(icon: Icons.shield_outlined, label: source),
+                      _DetailChip(icon: Icons.access_time, label: timeLabel),
+                      _DetailChip(
+                        icon: Icons.flag,
+                        label: _severityLabel(alert.severity),
+                      ),
+                      if (ip != null)
+                        _DetailChip(icon: Icons.public, label: ip),
+                    ],
+                  ),
+                  if (ip != null) ...[
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        NavigationIntentService.instance.openIpAnalysis(ip);
+                      },
+                      icon: Icon(
+                        Icons.open_in_new,
+                        size: 14,
+                        color: AppColors.cyanLight,
+                      ),
+                      label: Text(
+                        'Inspect IP',
+                        style: TextStyle(color: AppColors.cyanLight),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -390,5 +564,46 @@ class SecurityAlertToast extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String? _extractIp(String message) {
+    final match = RegExp(r'\b(?:\d{1,3}\.){3}\d{1,3}\b').firstMatch(message);
+    return match?.group(0);
+  }
+
+  String _friendlySource(String source) {
+    switch (source) {
+      case 'firewall':
+        return 'Firewall';
+      case 'packet_capture':
+        return 'Packet capture';
+      default:
+        return 'System';
+    }
+  }
+
+  String _severityLabel(String severity) {
+    switch (severity.toLowerCase()) {
+      case 'critical':
+        return 'Critical';
+      case 'high':
+        return 'High priority';
+      case 'medium':
+        return 'Watch closely';
+      case 'malicious':
+        return 'Malicious';
+      case 'suspicious':
+        return 'Suspicious';
+      default:
+        return severity.toUpperCase();
+    }
+  }
+
+  String _formatTime(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
   }
 }

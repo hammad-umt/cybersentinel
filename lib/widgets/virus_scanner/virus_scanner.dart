@@ -54,6 +54,7 @@ class _VirusScannerContentState extends State<VirusScannerContent> {
   Map<String, dynamic>? _result;
   String? _scanKind;
   final _urlController = TextEditingController();
+  final _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -66,6 +67,7 @@ class _VirusScannerContentState extends State<VirusScannerContent> {
   void dispose() {
     NavigationIntentService.instance.removeListener(_onNavigationIntent);
     _urlController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -307,190 +309,194 @@ class _VirusScannerContentState extends State<VirusScannerContent> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(32),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1000),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              PageHeader(
-                title: 'Virus & malware scanner',
-                subtitle: 'Scan files and URLs with VirusTotal threat intelligence integration.',
-                icon: Icons.bug_report_outlined,
-              ),
-              CyberCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Upload a file or enter a URL to scan for threats',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    MouseRegion(
-                      onEnter: (_) => setState(() => isHovered = true),
-                      onExit: (_) => setState(() => isHovered = false),
-                      child: DottedBorder(
-                        options: RoundedRectDottedBorderOptions(
-                          dashPattern: const [6, 4],
-                          strokeWidth: 2,
-                          color: isHovered ? AppColors.cyan : AppColors.borderElevated,
-                          radius: const Radius.circular(12),
-                        ),
-                        child: SizedBox(
-                          height: 260,
-                          width: double.infinity,
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Container(
-                                  width: 72,
-                                  height: 72,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.cyan.withValues(alpha: 0.12),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.cloud_upload_outlined,
-                                    size: 40,
-                                    color: AppColors.cyan,
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Drop files here or click to browse',
-                                  style: TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Maximum file size: 256 MB',
-                                  style: TextStyle(color: AppColors.textMuted, fontSize: 14),
-                                ),
-                                const SizedBox(height: 20),
-                                ElevatedButton(
-                                  onPressed: _pickFile,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.cyan,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                  child: const Text('Select File', style: TextStyle(fontWeight: FontWeight.w600)),
-                                ),
-                                if (selectedFileName != null) ...[
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'File: $selectedFileName',
-                                    style: TextStyle(color: AppColors.cyan, fontSize: 12),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    TextField(
-                      controller: _urlController,
-                      keyboardType: TextInputType.url,
-                      textInputAction: TextInputAction.go,
-                      onSubmitted: (_) => _scanning ? null : _scan(),
-                      onChanged: (_) {
-                        if (selectedFile != null) {
-                          setState(() {
-                            selectedFile = null;
-                            selectedFileName = null;
-                          });
-                        }
-                      },
-                      style: TextStyle(color: AppColors.textPrimary),
-                      cursorColor: AppColors.cyanLight,
-                      decoration: InputDecoration(
-                        hintText: 'Or enter a URL to scan...',
-                        hintStyle: TextStyle(color: AppColors.textDim),
-                        filled: true,
-                        fillColor: AppColors.alertItemBg,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide.none,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: AppColors.borderElevated),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: AppColors.cyan.withValues(alpha: 0.5)),
-                        ),
-                        prefixIcon: Icon(Icons.link, color: AppColors.textMuted),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton.icon(
-                        onPressed: _scanning ? null : _scan,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.cyan,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: AppColors.borderElevated,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        icon: _scanning
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Icon(Icons.search, size: 18),
-                        label: Text(_scanning ? 'Scanning...' : 'Scan Now'),
-                      ),
-                    ),
-                    if (_result != null) ...[
-                      const SizedBox(height: 24),
-                      _buildScanResult(),
-                    ],
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: AppColors.cyan.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.cyan.withValues(alpha: 0.2)),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.info_outline, color: AppColors.cyanLight, size: 18),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'URL scans use VirusTotal threat intelligence. Add your API key in Settings for full results.',
-                              style: TextStyle(color: AppColors.textMuted, fontSize: 12, height: 1.4),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+    return Scrollbar(
+      controller: _scrollController,
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        padding: const EdgeInsets.all(32),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1000),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                PageHeader(
+                  title: 'Virus & malware scanner',
+                  subtitle: 'Scan files and URLs with VirusTotal threat intelligence integration.',
+                  icon: Icons.bug_report_outlined,
                 ),
-              ),
-            ],
+                CyberCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Upload a file or enter a URL to scan for threats',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      MouseRegion(
+                        onEnter: (_) => setState(() => isHovered = true),
+                        onExit: (_) => setState(() => isHovered = false),
+                        child: DottedBorder(
+                          options: RoundedRectDottedBorderOptions(
+                            dashPattern: const [6, 4],
+                            strokeWidth: 2,
+                            color: isHovered ? AppColors.cyan : AppColors.borderElevated,
+                            radius: const Radius.circular(12),
+                          ),
+                          child: SizedBox(
+                            height: 260,
+                            width: double.infinity,
+                            child: Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 72,
+                                    height: 72,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.cyan.withValues(alpha: 0.12),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.cloud_upload_outlined,
+                                      size: 40,
+                                      color: AppColors.cyan,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Drop files here or click to browse',
+                                    style: TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Maximum file size: 256 MB',
+                                    style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  ElevatedButton(
+                                    onPressed: _pickFile,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.cyan,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    child: const Text('Select File', style: TextStyle(fontWeight: FontWeight.w600)),
+                                  ),
+                                  if (selectedFileName != null) ...[
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'File: $selectedFileName',
+                                      style: TextStyle(color: AppColors.cyan, fontSize: 12),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _urlController,
+                        keyboardType: TextInputType.url,
+                        textInputAction: TextInputAction.go,
+                        onSubmitted: (_) => _scanning ? null : _scan(),
+                        onChanged: (_) {
+                          if (selectedFile != null) {
+                            setState(() {
+                              selectedFile = null;
+                              selectedFileName = null;
+                            });
+                          }
+                        },
+                        style: TextStyle(color: AppColors.textPrimary),
+                        cursorColor: AppColors.cyanLight,
+                        decoration: InputDecoration(
+                          hintText: 'Or enter a URL to scan...',
+                          hintStyle: TextStyle(color: AppColors.textDim),
+                          filled: true,
+                          fillColor: AppColors.alertItemBg,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: AppColors.borderElevated),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: AppColors.cyan.withValues(alpha: 0.5)),
+                          ),
+                          prefixIcon: Icon(Icons.link, color: AppColors.textMuted),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton.icon(
+                          onPressed: _scanning ? null : _scan,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.cyan,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: AppColors.borderElevated,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: _scanning
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.search, size: 18),
+                          label: Text(_scanning ? 'Scanning...' : 'Scan Now'),
+                        ),
+                      ),
+                      if (_result != null) ...[
+                        const SizedBox(height: 24),
+                        _buildScanResult(),
+                      ],
+                      const SizedBox(height: 20),
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: AppColors.cyan.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.cyan.withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.info_outline, color: AppColors.cyanLight, size: 18),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'URL scans use VirusTotal threat intelligence. Add your API key in Settings for full results.',
+                                style: TextStyle(color: AppColors.textMuted, fontSize: 12, height: 1.4),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

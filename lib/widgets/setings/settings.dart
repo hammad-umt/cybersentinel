@@ -1,5 +1,4 @@
 import 'package:cybersentinel/auth/require_auth.dart';
-import 'package:cybersentinel/services/api_service.dart';
 import 'package:cybersentinel/services/auth_service.dart';
 import 'package:cybersentinel/theme/app_colors.dart';
 import 'package:cybersentinel/theme/theme_service.dart';
@@ -59,22 +58,16 @@ class _SettingsContentState extends State<SettingsContent> {
   bool pushNotifications = false;
   String selectedTheme = 'dark';
   bool _saving = false;
-  bool? _serviceOnline;
 
   @override
   void initState() {
     super.initState();
     selectedTheme = ThemeService.instance.themeName;
-    _checkServiceStatus();
   }
 
-  Future<void> _checkServiceStatus() async {
-    try {
-      await ApiService.instance.getHealth();
-      if (mounted) setState(() => _serviceOnline = true);
-    } catch (_) {
-      if (mounted) setState(() => _serviceOnline = false);
-    }
+  @override
+  void dispose() {
+    super.dispose();
   }
 
   Future<void> _saveSettings() async {
@@ -170,7 +163,7 @@ class _SettingsContentState extends State<SettingsContent> {
                     initials: _initials(email),
                     email: email,
                     role: role,
-                    isOnline: _serviceOnline,
+                    isOnline: true,
                     onSignOut: _confirmLogout,
                   ),
                   const SizedBox(height: _Hci.sectionGap),
