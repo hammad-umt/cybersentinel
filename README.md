@@ -97,8 +97,8 @@ cs-frontend/
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/yourusername/cs-frontend.git
-cd cs-frontend
+git clone https://github.com/hammad-umt/cybersentinel.git
+cd cybersentinel
 ```
 
 ### 2. Install Dependencies
@@ -384,7 +384,7 @@ For issues, bug reports, or feature requests, please create an issue on GitHub.
 
 ## License
 
-Proprietary - All Rights Reserved
+This project is proprietary software. All rights reserved. Unauthorized copying, modification, or distribution is prohibited.
 
 ## Support & Contact
 
